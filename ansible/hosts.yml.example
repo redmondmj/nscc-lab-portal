@@ -1,0 +1,46 @@
+# Example Ansible Inventory for Proxmox Lab VMs & Templates
+# Grouped by Course and Role
+
+all:
+  children:
+    # ---------------------------------------------------------
+    # OSYS1200: Operating Systems (Windows)
+    # ---------------------------------------------------------
+    osys1200:
+      children:
+        osys1200_templates:
+          hosts:
+            osys1200-template-2002:
+              ansible_host: 10.20.1.247   # VM 2002 on Lab VLAN 20
+        osys1200_vms:
+          hosts:
+            # Cloned student VMs (optional post-provisioning management)
+            # osys1200-student-w0123456:
+            #   ansible_host: 10.20.1.50
+
+    # ---------------------------------------------------------
+    # NETW2710: Network Systems
+    # ---------------------------------------------------------
+    netw2710:
+      children:
+        netw2710_templates:
+          hosts:
+            # netw2710-template-2001:
+            #   ansible_host: 10.20.1.100
+
+    # ---------------------------------------------------------
+    # Global Windows VM Connection Settings
+    # ---------------------------------------------------------
+    windows_vms:
+      children:
+        osys1200:
+        netw2710:
+      vars:
+        ansible_user: sysop
+        ansible_connection: winrm
+        ansible_port: 5986
+        ansible_winrm_transport: basic
+        ansible_winrm_scheme: https
+        ansible_winrm_server_cert_validation: ignore
+        # You can either enter the password interactively with --ask-pass,
+        # encrypt it with ansible-vault, or define ansible_password here in hosts.yml (uncommitted).

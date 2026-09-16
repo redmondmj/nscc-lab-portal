@@ -34,3 +34,8 @@ proxmox_mcp.log
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Ansible local inventory and vaults
+ansible/hosts.yml
+ansible/*vault*
+
