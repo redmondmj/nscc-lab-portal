@@ -542,43 +542,73 @@ def console_view(course_id, vmid):
         except Exception:
             pass
 
+    # Determine OS type (Windows RDP vs Linux SSH)
+    os_type = "windows"
+    if vm_record and vm_record.template and vm_record.template.os_type:
+        os_type = vm_record.template.os_type.lower()
+    elif getattr(course, "os_type", None):
+        os_type = course.os_type.lower()
+    elif cfg.get("os_type"):
+        os_type = cfg.get("os_type").lower()
+
+    default_user = "student" if os_type == "linux" else ".\\Student"
     username = (
         request.args.get("user")
         or (vm_record.template.default_username if (vm_record and vm_record.template and vm_record.template.default_username) else None)
         or cfg.get("default_username")
         or course.default_username
-        or ".\\Student"
+        or default_user
     )
     password = (
         request.args.get("pass")
+        or (vm_record.template.default_password if (vm_record and vm_record.template and vm_record.template.default_password) else None)
         or cfg.get("default_password")
         or os.environ.get(f"{course.id.upper()}_VM_PASSWORD")
         or os.environ.get("DEFAULT_VM_PASSWORD")
     )
 
-    domain = None
-    if "\\" in username:
-        domain, username = username.split("\\", 1)
-
-    rdp_settings = {
-        "hostname": target_ip,
-        "port": "3389",
-        "security": "any",
-        "ignore-cert": "true",
-        "color-depth": "24",
-        "username": username
-    }
-    if domain:
-        rdp_settings["domain"] = domain
-    if password:
-        rdp_settings["password"] = password
-
-    conn_settings = {
-        "connection": {
-            "type": "rdp",
-            "settings": rdp_settings
+    if os_type == "linux":
+        ssh_settings = {
+            "hostname": target_ip,
+            "port": "22",
+            "username": username,
+            "font-name": "monospace",
+            "font-size": "14",
+            "color-scheme": "black-white"
         }
-    }
+        if password:
+            ssh_settings["password"] = password
+
+        conn_settings = {
+            "connection": {
+                "type": "ssh",
+                "settings": ssh_settings
+            }
+        }
+    else:
+        domain = None
+        if "\\" in username:
+            domain, username = username.split("\\", 1)
+
+        rdp_settings = {
+            "hostname": target_ip,
+            "port": "3389",
+            "security": "any",
+            "ignore-cert": "true",
+            "color-depth": "24",
+            "username": username
+        }
+        if domain:
+            rdp_settings["domain"] = domain
+        if password:
+            rdp_settings["password"] = password
+
+        conn_settings = {
+            "connection": {
+                "type": "rdp",
+                "settings": rdp_settings
+            }
+        }
 
     token = generate_guacamole_token(conn_settings, app.secret_key)
     vm_data = vm_record.to_dict() if vm_record else {"vmid": vmid, "name": f"VM-{vmid}", "last_ip": target_ip}
@@ -676,11 +706,12 @@ def api_admin_add_template():
         supports_spice=True,
         preferred_node=data.get("preferred_node", "pve2"),
         default_username=data.get("default_username", ".\\Student"),
+        default_password=data.get("default_password") or None,
         is_published=data.get("is_published", True)
     )
     db.session.add(tmpl)
     db.session.commit()
-    return jsonify({"success": True, "template": tmpl.to_dict()}), 201
+    return jsonify({"success": True, "template": tmpl.to_dict(include_sensitive=True)}), 201
 
 @app.route("/api/admin/templates/<int:template_id>", methods=["PATCH"])
 @admin_required
@@ -697,6 +728,10 @@ def api_admin_update_template(template_id):
         tmpl.name = data["name"]
     if "description" in data:
         tmpl.description = data["description"]
+    if "default_username" in data:
+        tmpl.default_username = data["default_username"]
+    if "default_password" in data:
+        tmpl.default_password = data["default_password"] or None
 
     db.session.commit()
     return jsonify({"success": True, "template": tmpl.to_dict()})

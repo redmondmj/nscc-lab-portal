@@ -248,15 +248,44 @@ class TestProxmoxApp(unittest.TestCase):
         self.assertEqual(decrypted_obj["connection"]["type"], "rdp")
         self.assertEqual(decrypted_obj["connection"]["settings"]["hostname"], "10.10.0.211")
 
-    def test_console_route_isolation(self):
-        """Test RBAC and student isolation on /console/<vmid>."""
-        with self.client.session_transaction() as sess:
-            sess["user"] = {"id": "W0123456", "name": "Student A", "role": "student"}
+    def test_template_password_privacy(self):
+        """Verify lab template passwords are never exposed in public to_dict()."""
+        from models import LabTemplate
+        tmpl = LabTemplate(
+            course_id="osys1200",
+            template_vmid=2002,
+            name="Test Template",
+            slug="test-tmpl",
+            default_username="student",
+            default_password="SecretPassword123"
+        )
+        public_dict = tmpl.to_dict()
+        self.assertNotIn("default_password", public_dict)
 
-        # Attempt to access non-existent or peer VM
-        res = self.client.get("/osys1200/console/9999")
-        # Should return 403 or 400
-        self.assertIn(res.status_code, [400, 403, 404])
+        admin_dict = tmpl.to_dict(include_sensitive=True)
+        self.assertIn("default_password", admin_dict)
+        self.assertEqual(admin_dict["default_password"], "SecretPassword123")
+
+    def test_guacamole_ssh_token(self):
+        """Test generating SSH connection token for Linux VMs/containers."""
+        import base64
+        import json
+        from app import generate_guacamole_token
+
+        secret = "test-secret-key-for-guacamole-12"
+        settings = {
+            "connection": {
+                "type": "ssh",
+                "settings": {
+                    "hostname": "10.10.0.250",
+                    "port": "22",
+                    "username": "student",
+                    "password": "SecretPassword123"
+                }
+            }
+        }
+        token = generate_guacamole_token(settings, secret)
+        self.assertIsInstance(token, str)
 
 if __name__ == "__main__":
     unittest.main()

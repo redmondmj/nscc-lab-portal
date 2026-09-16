@@ -48,13 +48,14 @@ class LabTemplate(db.Model):
     supports_spice = db.Column(db.Boolean, default=True)
     preferred_node = db.Column(db.String(64), default="pve2")
     default_username = db.Column(db.String(64), default=".\\Student")
+    default_password = db.Column(db.String(128), nullable=True)
     is_published = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     student_vms = db.relationship("StudentVM", backref="template", lazy=True)
 
-    def to_dict(self):
-        return {
+    def to_dict(self, include_sensitive=False):
+        data = {
             "id": self.id,
             "course_id": self.course_id,
             "template_vmid": self.template_vmid,
@@ -68,6 +69,9 @@ class LabTemplate(db.Model):
             "default_username": self.default_username,
             "is_published": self.is_published
         }
+        if include_sensitive:
+            data["default_password"] = self.default_password
+        return data
 
 class User(db.Model):
     __tablename__ = "users"

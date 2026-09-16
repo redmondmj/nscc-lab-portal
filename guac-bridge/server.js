@@ -37,7 +37,8 @@ const clientOptions = {
         key: key
     },
     allowedUnencryptedConnectionSettings: {
-        rdp: ['width', 'height', 'dpi']
+        rdp: ['width', 'height', 'dpi'],
+        ssh: ['width', 'height', 'dpi', 'font-size', 'color-scheme']
     },
     log: {
         level: process.env.LOG_LEVEL || 'NORMAL'

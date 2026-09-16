@@ -11,6 +11,17 @@ def seed_database(app):
     with app.app_context():
         db.create_all()
 
+        # Ensure default_password column exists in lab_templates (safe auto-migration)
+        try:
+            with db.engine.connect() as conn:
+                cols = [row[1] for row in conn.execute(db.text("PRAGMA table_info(lab_templates)")).fetchall()]
+                if "default_password" not in cols:
+                    conn.execute(db.text("ALTER TABLE lab_templates ADD COLUMN default_password VARCHAR(128)"))
+                    conn.commit()
+                    logger.info("Migrated lab_templates table: added default_password column.")
+        except Exception as e:
+            logger.warning(f"Column migration check note: {e}")
+
         config_file = Path(app.root_path) / "config" / "courses.json"
         if not config_file.exists():
             logger.warning("config/courses.json not found, skipping seeding.")
@@ -59,9 +70,12 @@ def seed_database(app):
                             supports_spice=cdata.get("supports_spice", True),
                             preferred_node=cdata.get("preferred_node", "pve2"),
                             default_username=cdata.get("default_username", ".\\Student"),
+                            default_password=cdata.get("default_password"),
                             is_published=True
                         )
                         db.session.add(new_tmpl)
+                    elif not existing_tmpl.default_password and cdata.get("default_password"):
+                        existing_tmpl.default_password = cdata.get("default_password")
 
             db.session.commit()
             logger.info("Database initialized and seeded successfully.")

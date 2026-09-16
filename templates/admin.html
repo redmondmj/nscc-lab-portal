@@ -214,10 +214,15 @@
                             <span style="font-family: monospace; color: #38bdf8;">{{ vm.last_ip or (vm.status == 'running' and 'Acquiring...' or 'Offline') }}</span>
                         </td>
                         <td>
-                            <div style="display: flex; gap: 0.35rem;">
-                                <a href="/{{ vm.course_id }}/console/{{ vm.vmid }}" target="_blank" class="btn btn-primary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; background: #0284c7; border-color: #0369a1; {% if not vm.last_ip %}pointer-events: none; opacity: 0.4;{% endif %}" title="Open In-Browser HTML5 Desktop">
+                                {% if (vm.template and vm.template.os_type == 'linux') or (vm.course and vm.course.os_type == 'linux') %}
+                                <a href="/{{ vm.course_id }}/console/{{ vm.vmid }}" target="_blank" class="btn btn-primary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; background: #059669; border-color: #047857; {% if not vm.last_ip %}pointer-events: none; opacity: 0.4;{% endif %}" title="Open In-Browser HTML5 Linux Terminal">
+                                    &#128187; Terminal
+                                </a>
+                                {% else %}
+                                <a href="/{{ vm.course_id }}/console/{{ vm.vmid }}" target="_blank" class="btn btn-primary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; background: #0284c7; border-color: #0369a1; {% if not vm.last_ip %}pointer-events: none; opacity: 0.4;{% endif %}" title="Open In-Browser HTML5 Windows Desktop">
                                     &#128421; Desktop
                                 </a>
+                                {% endif %}
                                 <a href="/api/{{ vm.course_id }}/vv/{{ vm.vmid }}" class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" title="Open Virt-Viewer SPICE Console">
                                     &#128225; SPICE
                                 </a>
@@ -255,7 +260,8 @@
                         <th>Proxmox Template VMID</th>
                         <th>Node</th>
                         <th>OS Type</th>
-                        <th>RDP Enabled</th>
+                        <th>Credentials</th>
+                        <th>RDP/Console</th>
                         <th>Publish Status</th>
                         <th>Actions</th>
                     </tr>
@@ -271,7 +277,15 @@
                         <td><code>{{ tmpl.template_vmid }}</code></td>
                         <td>{{ tmpl.preferred_node }}</td>
                         <td><span class="badge {% if tmpl.os_type == 'windows' %}badge-info{% else %}badge-warning{% endif %}">{{ tmpl.os_type.upper() }}</span></td>
-                        <td>{{ "Yes" if tmpl.supports_rdp else "No (SPICE Only)" }}</td>
+                        <td>
+                            <code style="font-size: 0.8rem;">{{ tmpl.default_username }}</code>
+                            {% if tmpl.default_password %}
+                            <span style="display: block; font-size: 0.75rem; color: #34d399;" title="{{ tmpl.default_password }}">&#128273; {{ tmpl.default_password }}</span>
+                            {% else %}
+                            <span style="display: block; font-size: 0.75rem; color: var(--text-muted);">&#128273; Inherits Course</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ "RDP / Desktop" if tmpl.supports_rdp else "SSH Terminal / SPICE" }}</td>
                         <td>
                             <span class="badge {% if tmpl.is_published %}badge-success{% else %}badge-danger{% endif %}">
                                 {{ "PUBLISHED" if tmpl.is_published else "DRAFT / HIDDEN" }}
@@ -360,19 +374,26 @@ ansible -i "http://10.10.0.103/api/admin/ansible/inventory" all -m win_ping
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                     <div>
                         <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">OS Type:</label>
-                        <select id="modalOs" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
-                            <option value="windows">Windows</option>
-                            <option value="linux">Linux</option>
-                        </select>
-                    </div>
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">OS Type:</label>
+                    <select id="modalOs" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                        <option value="windows">Windows</option>
+                        <option value="linux">Linux</option>
+                    </select>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                     <div>
                         <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Default User:</label>
                         <input type="text" id="modalUser" value=".\Student" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
                     </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Default Lab Password:</label>
+                        <input type="text" id="modalPass" placeholder="e.g. It$tudents (or blank to inherit)" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                    </div>
                 </div>
                 <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
                     <label style="font-size: 0.9rem; color: #e2e8f0; display: flex; align-items: center; gap: 0.4rem;">
-                        <input type="checkbox" id="modalRdp" checked> Enable RDP
+                        <input type="checkbox" id="modalRdp" checked> Enable RDP (Windows)
                     </label>
                     <label style="font-size: 0.9rem; color: #e2e8f0; display: flex; align-items: center; gap: 0.4rem;">
                         <input type="checkbox" id="modalPublish" checked> Publish Immediately
@@ -418,9 +439,19 @@ ansible -i "http://10.10.0.103/api/admin/ansible/inventory" all -m win_ping
             const text = row.getAttribute("data-search").toLowerCase();
             const rowCourse = row.getAttribute("data-course");
             const matchesQuery = text.includes(q);
-            const matchesCourse = !course || (rowCourse === course);
+            const matchesCourse = (!course || rowCourse === course);
 
             row.style.display = (matchesQuery && matchesCourse) ? "" : "none";
+        });
+    }
+
+    function filterTemplatesTable() {
+        const course = document.getElementById("templateCourseFilter").value;
+        const rows = document.querySelectorAll("#templatesTab tbody tr");
+        rows.forEach(row => {
+            const rowBadge = row.querySelector("td .badge");
+            const rowCourse = rowBadge ? rowBadge.innerText.trim() : "";
+            row.style.display = (!course || rowCourse === course) ? "" : "none";
         });
     }
 
@@ -486,6 +517,7 @@ ansible -i "http://10.10.0.103/api/admin/ansible/inventory" all -m win_ping
             description: document.getElementById("modalDesc").value,
             os_type: document.getElementById("modalOs").value,
             default_username: document.getElementById("modalUser").value,
+            default_password: document.getElementById("modalPass").value.trim() || null,
             supports_rdp: document.getElementById("modalRdp").checked,
             is_published: document.getElementById("modalPublish").checked
         };
