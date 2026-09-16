@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Sign-In Error - NSCC Lab Portal{% endblock %}
+
+{% block content %}
+<div style="max-width: 620px; margin: 3rem auto; padding: 0 1rem;">
+    <div style="background: var(--card-bg); border: 1px solid var(--border); border-radius: 16px; padding: 2.25rem; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);">
+        <div style="display: inline-flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 12px; background: rgba(239, 68, 68, 0.15); color: #f87171; margin-bottom: 1.25rem;">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+        </div>
+
+        <h1 style="font-size: 1.4rem; color: #fff; margin-bottom: 0.75rem;">{{ error_title or "Account Sign-In Conflict" }}</h1>
+        
+        <p style="font-size: 0.95rem; color: #cbd5e1; line-height: 1.6; margin-bottom: 1.25rem;">
+            {{ error_message or "Your browser attempted to sign in with an account that does not belong to the NSCC Truro Lab tenant." }}
+        </p>
+
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1.75rem;">
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; font-weight: 600;">Why this happened:</p>
+            <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.5;">
+                Your browser currently has an active Microsoft login for a different organization (such as <code style="color: #f87171;">@campus.nscc.ca</code> or a personal account).
+                <br><br>
+                For lab coursework, you must sign in with your designated Truro lab account: <code style="color: #38bdf8;">firstname.lastname@nscctruro.ca</code>.
+            </p>
+        </div>
+
+        {% if error_detail %}
+        <details style="margin-bottom: 1.75rem; font-size: 0.8rem; color: var(--text-muted);">
+            <summary style="cursor: pointer; margin-bottom: 0.5rem;">Technical details</summary>
+            <pre style="background: #0b1120; padding: 0.75rem; border-radius: 6px; overflow-x: auto; color: #ef4444;">{{ error_detail }}</pre>
+        </details>
+        {% endif %}
+
+        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <a href="{{ login_url or '/login?prompt=select_account&domain_hint=nscctruro.ca' }}" class="btn btn-primary" style="text-align: center; text-decoration: none; padding: 0.75rem 1.25rem; font-weight: 600; font-size: 0.95rem;">
+                Sign In with @nscctruro.ca Account &rarr;
+            </a>
+            
+            <a href="/logout?all=true" class="btn btn-secondary" style="text-align: center; text-decoration: none; padding: 0.65rem 1.25rem; font-size: 0.9rem;">
+                Clear Active Microsoft Session &amp; Retry
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

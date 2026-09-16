@@ -976,7 +976,10 @@ def login():
     next_url = request.args.get("next") or url_for("index")
     session["auth_next"] = next_url
 
-    flow = initiate_auth_flow(redirect_uri)
+    prompt = request.args.get("prompt", "select_account")
+    domain_hint = request.args.get("domain_hint") or os.environ.get("ENTRA_DOMAIN_HINT", "nscctruro.ca")
+
+    flow = initiate_auth_flow(redirect_uri, prompt=prompt, domain_hint=domain_hint)
     if not flow or "auth_uri" not in flow:
         abort(500, description="Failed to initialize Microsoft Entra authentication.")
 
@@ -990,7 +993,13 @@ def auth_callback():
     if error:
         error_desc = request.args.get("error_description", error)
         logger.error(f"Entra ID auth error: {error} - {error_desc}")
-        abort(400, description=f"Authentication failed: {error_desc}")
+        return render_template(
+            "auth_error.html",
+            error_title="Account Sign-In Conflict",
+            error_message="Your browser attempted to sign in with an account from a different organization (e.g. @campus.nscc.ca or personal account).",
+            error_detail=error_desc,
+            login_url=url_for("login", prompt="select_account", domain_hint="nscctruro.ca")
+        ), 400
 
     auth_flow = session.pop("auth_flow", None)
     if not auth_flow:
@@ -1001,7 +1010,13 @@ def auth_callback():
     if not result or "id_token_claims" not in result:
         err_msg = result.get("error_description") if result else "Failed to acquire token."
         logger.error(f"Token acquisition failed: {err_msg}")
-        abort(401, description=f"Sign-in failed: {err_msg}")
+        return render_template(
+            "auth_error.html",
+            error_title="Sign-In Verification Failed",
+            error_message="Could not acquire token for the selected account.",
+            error_detail=err_msg,
+            login_url=url_for("login", prompt="select_account", domain_hint="nscctruro.ca")
+        ), 401
 
     claims = result["id_token_claims"]
     user_info = extract_user_from_claims(claims)
@@ -1036,6 +1051,14 @@ def logout():
     if user:
         logger.info(f"User logged out: {user.get('name')} ({user.get('id')})")
     session.clear()
+
+    # If all=true, also sign out of Microsoft Entra ID session cookies
+    if request.args.get("all") == "true":
+        tenant_id = os.environ.get("ENTRA_TENANT_ID")
+        if tenant_id:
+            post_logout = url_for("index", _external=True)
+            return redirect(f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/logout?post_logout_redirect_uri={post_logout}")
+
     return redirect(url_for("index"))
 
 @app.route("/api/me")

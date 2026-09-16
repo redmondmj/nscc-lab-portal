@@ -26,17 +26,26 @@ def get_msal_app():
         client_credential=client_secret
     )
 
-def initiate_auth_flow(redirect_uri, state=None):
+def initiate_auth_flow(redirect_uri, state=None, prompt="select_account", domain_hint=None):
     """Initiates MSAL auth code flow and returns flow dictionary."""
     msal_app = get_msal_app()
     if not msal_app:
         return None
 
-    return msal_app.initiate_auth_code_flow(
-        scopes=SCOPES,
-        redirect_uri=redirect_uri,
-        state=state
-    )
+    if domain_hint is None:
+        domain_hint = os.environ.get("ENTRA_DOMAIN_HINT", "nscctruro.ca")
+
+    flow_kwargs = {
+        "scopes": SCOPES,
+        "redirect_uri": redirect_uri,
+        "state": state,
+    }
+    if prompt:
+        flow_kwargs["prompt"] = prompt
+    if domain_hint:
+        flow_kwargs["domain_hint"] = domain_hint
+
+    return msal_app.initiate_auth_code_flow(**flow_kwargs)
 
 def acquire_token_by_flow(auth_flow, auth_response):
     """Completes auth code flow and acquires token."""
