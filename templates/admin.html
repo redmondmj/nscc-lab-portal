@@ -400,7 +400,7 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
                                           title="Remove from course">&times;</span>
                                 </span>
                                 {% endfor %}
-                                <button class="btn btn-secondary" style="font-size: 0.7rem; padding: 0.15rem 0.45rem; border-radius: 4px;" onclick="openQuickEnrollModal('{{ s.id }}', '{{ s.name }}')">
+                                <button class="btn btn-secondary" style="font-size: 0.7rem; padding: 0.15rem 0.45rem; border-radius: 4px;" data-student-id="{{ s.id }}" data-student-name="{{ s.name }}" onclick="openQuickEnrollModal(this.dataset.studentId, this.dataset.studentName)">
                                     + Add
                                 </button>
                             </div>
@@ -455,9 +455,6 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
                     <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Description / Lab Brief:</label>
                     <textarea id="modalDesc" rows="2" placeholder="Brief lab objectives or instructions..." style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;"></textarea>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                    <div>
-                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">OS Type:</label>
                 <div>
                     <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">OS Type:</label>
                     <select id="modalOs" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
@@ -620,24 +617,38 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
     let activeQuickStudentId = null;
 
     function openAssignCohortModal() {
-        document.getElementById("assignCohortModal").style.display = "flex";
+        console.log("Opening assignCohortModal");
+        const modal = document.getElementById("assignCohortModal");
+        if (modal) modal.style.display = "flex";
     }
 
     function closeAssignCohortModal() {
-        document.getElementById("assignCohortModal").style.display = "none";
+        const modal = document.getElementById("assignCohortModal");
+        if (modal) modal.style.display = "none";
     }
 
     function openQuickEnrollModal(userId, userName) {
+        console.log("Opening quickEnrollModal for:", userId, userName);
         activeQuickStudentId = userId;
-        document.getElementById("quickStudentName").innerText = userName || userId;
-        document.getElementById("quickStudentId").innerText = userId;
-        document.getElementById("quickEnrollModal").style.display = "flex";
+        const nameEl = document.getElementById("quickStudentName");
+        const idEl = document.getElementById("quickStudentId");
+        if (nameEl) nameEl.innerText = userName || userId;
+        if (idEl) idEl.innerText = userId;
+        const modal = document.getElementById("quickEnrollModal");
+        if (modal) modal.style.display = "flex";
     }
 
     function closeQuickEnrollModal() {
         activeQuickStudentId = null;
-        document.getElementById("quickEnrollModal").style.display = "none";
+        const modal = document.getElementById("quickEnrollModal");
+        if (modal) modal.style.display = "none";
     }
+
+    window.addEventListener("click", function(e) {
+        if (e.target && e.target.classList.contains("modal")) {
+            e.target.style.display = "none";
+        }
+    });
 
     async function submitCohortEnroll(action) {
         const cohort = document.getElementById("modalCohortSelect").value;
