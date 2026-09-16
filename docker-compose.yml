@@ -1,18 +1,25 @@
 services:
-  proxmox-getvm-app:
+  proxmox-app:
     build: .
     container_name: proxmox-app
     restart: unless-stopped
     ports:
-      - "80:5000"
-    environment:
-      - PROXMOX_HOST=${PROXMOX_HOST}
-      - PROXMOX_API_USER=${PROXMOX_API_USER}
-      - PROXMOX_API_TOKEN_ID=${PROXMOX_API_TOKEN_ID}
-      - PROXMOX_API_TOKEN_SECRET=${PROXMOX_API_TOKEN_SECRET}
-      - PROXMOX_SPICE_PORT=${PROXMOX_SPICE_PORT:-3128}
-      - PORT=5000
+      - "127.0.0.1:5000:5000"
     env_file:
       - .env
     volumes:
       - ./data:/app/data
+
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: nginx-proxy-manager
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "81:81"
+      - "443:443"
+    volumes:
+      - ./npm/data:/data
+      - ./npm/letsencrypt:/etc/letsencrypt
+    depends_on:
+      - proxmox-app
