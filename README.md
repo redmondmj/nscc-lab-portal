@@ -1,6 +1,6 @@
-# NSCC Virtual Lab Portal (`proxmox-getvm-app`)
+# NSCC Lab Portal (`nscc-lab-portal`)
 
-Self-service web portal for NSCC students to start, monitor, and connect to their dedicated virtual lab machines hosted on the **NSCC Proxmox Cluster (`ProxNscCluster`)**.
+Multi-course, self-service cloud portal for NSCC students and faculty to provision, manage, and connect to dedicated Proxmox virtual lab machines.
 
 Built for **OSYS1200 (Operating Systems)** with multi-course support (including **NETW2710**).
 
