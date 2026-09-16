@@ -265,14 +265,44 @@
             const tunnel = new Guacamole.WebSocketTunnel(wsUrl);
             client = new Guacamole.Client(tunnel);
 
+            const display = client.getDisplay();
             const displayEl = document.getElementById("display");
-            const guacDisplay = client.getDisplay().getElement();
+            const guacDisplay = display.getElement();
             displayEl.appendChild(guacDisplay);
 
-            // Mouse handling
+            function scaleDisplay() {
+                const viewport = document.getElementById("viewport");
+                const vpWidth = viewport.clientWidth;
+                const vpHeight = viewport.clientHeight;
+                const dispWidth = display.getWidth();
+                const dispHeight = display.getHeight();
+                if (dispWidth > 0 && dispHeight > 0) {
+                    const scale = Math.min(vpWidth / dispWidth, vpHeight / dispHeight);
+                    display.scale(scale);
+                    console.log(`Scaled Guacamole display: ${dispWidth}x${dispHeight} at scale ${scale.toFixed(2)}`);
+                }
+            }
+
+            display.onresize = function(width, height) {
+                console.log(`Guacamole display resized: ${width}x${height}`);
+                scaleDisplay();
+            };
+            window.addEventListener("resize", scaleDisplay);
+
+            // Mouse handling with display scaling
             mouse = new Guacamole.Mouse(guacDisplay);
             mouse.onmousedown = mouse.onmouseup = mouse.onmousemove = function(mouseState) {
-                client.sendMouseState(mouseState);
+                const scale = display.getScale() || 1;
+                const scaledState = new Guacamole.Mouse.State(
+                    mouseState.x / scale,
+                    mouseState.y / scale,
+                    mouseState.left,
+                    mouseState.middle,
+                    mouseState.right,
+                    mouseState.up,
+                    mouseState.down
+                );
+                client.sendMouseState(scaledState);
             };
 
             // Keyboard handling

@@ -565,7 +565,7 @@ def console_view(course_id, vmid):
         "port": "3389",
         "security": "any",
         "ignore-cert": "true",
-        "resize-method": "display-update",
+        "color-depth": "24",
         "username": username
     }
     if domain:
