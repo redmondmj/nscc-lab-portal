@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+
+{% block title %}{{ course.name }} - Lab Portal{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <span class="badge {% if course.os_type == 'windows' %}badge-info{% else %}badge-warning{% endif %}">{{ course.badge }}</span>
+        <h1>{{ course.name }}</h1>
+        <p class="subtitle">{{ course.subtitle }} &bull; Node <code>{{ course.preferred_node }}</code></p>
+    </div>
+
+    <!-- Student ID Entry Form -->
+    <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.75rem;">
+        <label for="studentId" style="display: block; font-weight: 600; font-size: 0.95rem; margin-bottom: 0.5rem; color: #f8fafc;">
+            Enter your NSCC Student ID or VM ID:
+        </label>
+        <div style="display: flex; gap: 0.75rem;">
+            <input type="text" id="studentId" placeholder="e.g. W0123456 or 123456" 
+                   style="flex: 1; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: #0f172a; color: #fff; font-size: 1rem; font-family: monospace;"
+                   autofocus>
+            <button id="btnCheckStatus" class="btn btn-secondary" onclick="checkStatus()">
+                <span id="checkSpinner" class="spinner" style="display: none;"></span>
+                <span>Check VM</span>
+            </button>
+        </div>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.6rem;">
+            Type your full student ID (leading <code>W0</code> is automatically handled).
+        </p>
+    </div>
+
+    <!-- VM Status & Actions Card (Hidden until checked or preloaded) -->
+    <div id="vmCard" style="display: none; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.75rem;">
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem;">
+            <div>
+                <span style="font-size: 0.85rem; color: var(--text-muted); display: block;">Virtual Machine</span>
+                <strong id="vmNameDisplay" style="font-size: 1.15rem; color: #fff;">--</strong>
+                <span id="vmIdDisplay" style="font-size: 0.85rem; color: var(--text-muted); margin-left: 0.5rem;"></span>
+            </div>
+            <div id="vmStatusBadge">
+                <span class="badge">Checking...</span>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem; font-size: 0.85rem;">
+            <div>
+                <span style="color: var(--text-muted); display: block;">Host Node:</span>
+                <strong id="vmNodeDisplay" style="color: #cbd5e1;">--</strong>
+            </div>
+            <div>
+                <span style="color: var(--text-muted); display: block;">IP Address:</span>
+                <strong id="vmIpDisplay" style="color: #38bdf8;">--</strong>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div id="actionButtons" style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                <button id="btnStartVm" class="btn btn-success" onclick="startVm()">
+                    <span id="startSpinner" class="spinner" style="display: none;"></span>
+                    <span id="startBtnText">&#9654; Start VM</span>
+                </button>
+                <button id="btnRestartVm" class="btn btn-secondary" onclick="restartVm()">
+                    <span id="restartSpinner" class="spinner" style="display: none;"></span>
+                    <span>&#8635; Restart VM</span>
+                </button>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; margin-top: 0.25rem;">
+                {% if course.supports_rdp %}
+                <button id="btnDownloadRdp" class="btn btn-primary" style="flex: 1;" onclick="downloadRdp()" disabled>
+                    <span>&#128187; Connect via RDP (.rdp)</span>
+                </button>
+                {% endif %}
+                {% if course.supports_spice %}
+                <button id="btnDownloadVv" class="btn btn-secondary" style="flex: 1;" onclick="downloadVv()">
+                    <span>&#128225; Virt-Viewer (.vv)</span>
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert / Toast Banner -->
+    <div id="alertBox" class="alert">
+        <span id="alertMessage"></span>
+    </div>
+
+    <!-- Instructions / Tips -->
+    <div style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
+        <h3 style="font-size: 1rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.75rem;">Course Lab Notes:</h3>
+        <ul style="padding-left: 1.25rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.6;">
+            {% for note in course.notes %}
+            <li>{{ note|safe }}</li>
+            {% endfor %}
+            {% if course.default_username %}
+            <li>Default VM User: <code>{{ course.default_username }}</code></li>
+            {% endif %}
+        </ul>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    const COURSE_ID = "{{ course.id }}";
+    let currentVmid = "";
+    let statusPollingTimer = null;
+
+    function sanitizeId(raw) {
+        if (!raw) return "";
+        let clean = raw.trim().toUpperCase();
+        if (clean.startsWith("W0")) {
+            clean = clean.substring(2);
+        } else if (clean.startsWith("W")) {
+            clean = clean.substring(1);
+        }
+        return clean.replace(/\D/g, "");
+    }
+
+    document.getElementById("studentId").addEventListener("keypress", function(e) {
+        if (e.key === "Enter") {
+            checkStatus();
+        }
+    });
+
+    function showAlert(message, type) {
+        const box = document.getElementById("alertBox");
+        const msg = document.getElementById("alertMessage");
+        box.className = `alert alert-${type}`;
+        msg.innerHTML = message;
+        box.style.display = "block";
+    }
+
+    function hideAlert() {
+        document.getElementById("alertBox").style.display = "none";
+    }
+
+    async function checkStatus() {
+        const rawInput = document.getElementById("studentId").value;
+        const vmid = sanitizeId(rawInput);
+        if (!vmid) {
+            showAlert("Please enter a valid student or VM ID number.", "error");
+            return;
+        }
+
+        currentVmid = vmid;
+        hideAlert();
+        document.getElementById("checkSpinner").style.display = "inline-block";
+        document.getElementById("btnCheckStatus").disabled = true;
+
+        try {
+            const res = await fetch(`/api/${COURSE_ID}/status/${vmid}`);
+            const data = await res.json();
+
+            document.getElementById("vmCard").style.display = "block";
+            document.getElementById("vmIdDisplay").innerText = `(ID: ${vmid})`;
+
+            if (!res.ok || !data.found) {
+                document.getElementById("vmNameDisplay").innerText = "Not Found";
+                document.getElementById("vmStatusBadge").innerHTML = `<span class="badge badge-danger">Not Found</span>`;
+                document.getElementById("vmNodeDisplay").innerText = "N/A";
+                document.getElementById("vmIpDisplay").innerText = "N/A";
+                document.getElementById("btnStartVm").disabled = true;
+                document.getElementById("btnRestartVm").disabled = true;
+                if (document.getElementById("btnDownloadRdp")) document.getElementById("btnDownloadRdp").disabled = true;
+                if (document.getElementById("btnDownloadVv")) document.getElementById("btnDownloadVv").disabled = true;
+
+                showAlert(`No VM found matching ID <code>${vmid}</code> for this course. Please verify your Student ID.`, "error");
+                return;
+            }
+
+            // VM Found
+            document.getElementById("vmNameDisplay").innerText = data.name || `VM ${vmid}`;
+            document.getElementById("vmNodeDisplay").innerText = data.node || "pve";
+            document.getElementById("vmIpDisplay").innerText = data.ip || (data.status === "running" ? "Acquiring DHCP..." : "Offline");
+
+            const isRunning = (data.status === "running");
+            if (isRunning) {
+                document.getElementById("vmStatusBadge").innerHTML = `<span class="badge badge-success">Running</span>`;
+                document.getElementById("btnStartVm").disabled = true;
+                document.getElementById("startBtnText").innerText = "Running";
+                document.getElementById("btnRestartVm").disabled = false;
+                if (document.getElementById("btnDownloadVv")) document.getElementById("btnDownloadVv").disabled = false;
+                
+                // If IP is present and RDP is supported
+                if (document.getElementById("btnDownloadRdp")) {
+                    document.getElementById("btnDownloadRdp").disabled = !data.ip;
+                }
+            } else {
+                document.getElementById("vmStatusBadge").innerHTML = `<span class="badge badge-warning">Stopped</span>`;
+                document.getElementById("btnStartVm").disabled = false;
+                document.getElementById("startBtnText").innerText = "▶ Start VM";
+                document.getElementById("btnRestartVm").disabled = true;
+                if (document.getElementById("btnDownloadRdp")) document.getElementById("btnDownloadRdp").disabled = true;
+                if (document.getElementById("btnDownloadVv")) document.getElementById("btnDownloadVv").disabled = true;
+            }
+
+        } catch (err) {
+            showAlert("Failed to connect to backend server: " + err.message, "error");
+        } finally {
+            document.getElementById("checkSpinner").style.display = "none";
+            document.getElementById("btnCheckStatus").disabled = false;
+        }
+    }
+
+    async function startVm() {
+        if (!currentVmid) return;
+        document.getElementById("startSpinner").style.display = "inline-block";
+        document.getElementById("btnStartVm").disabled = true;
+        hideAlert();
+
+        try {
+            const res = await fetch(`/api/${COURSE_ID}/start/${currentVmid}`, { method: "POST" });
+            const data = await res.json();
+            if (res.ok) {
+                showAlert("Start command sent! Initializing VM, please wait...", "info");
+                // Poll every 3 seconds for 15 seconds
+                let attempts = 0;
+                if (statusPollingTimer) clearInterval(statusPollingTimer);
+                statusPollingTimer = setInterval(async () => {
+                    attempts++;
+                    await checkStatus();
+                    if (attempts > 5) clearInterval(statusPollingTimer);
+                }, 3000);
+            } else {
+                showAlert(data.error || "Failed to start VM.", "error");
+            }
+        } catch (err) {
+            showAlert("Error starting VM: " + err.message, "error");
+        } finally {
+            document.getElementById("startSpinner").style.display = "none";
+        }
+    }
+
+    async function restartVm() {
+        if (!currentVmid) return;
+        if (!confirm("Are you sure you want to reboot your VM? Unsaved work will be lost.")) return;
+
+        document.getElementById("restartSpinner").style.display = "inline-block";
+        document.getElementById("btnRestartVm").disabled = true;
+        hideAlert();
+
+        try {
+            const res = await fetch(`/api/${COURSE_ID}/restart/${currentVmid}`, { method: "POST" });
+            const data = await res.json();
+            if (res.ok) {
+                showAlert("Reboot command sent to VM.", "info");
+                setTimeout(checkStatus, 4000);
+            } else {
+                showAlert(data.error || "Failed to restart VM.", "error");
+            }
+        } catch (err) {
+            showAlert("Error restarting VM: " + err.message, "error");
+        } finally {
+            document.getElementById("restartSpinner").style.display = "none";
+            document.getElementById("btnRestartVm").disabled = false;
+        }
+    }
+
+    function downloadVv() {
+        if (!currentVmid) return;
+        window.location.href = `/api/${COURSE_ID}/vv/${currentVmid}`;
+    }
+
+    function downloadRdp() {
+        if (!currentVmid) return;
+        window.location.href = `/api/${COURSE_ID}/rdp/${currentVmid}`;
+    }
+</script>
+{% endblock %}

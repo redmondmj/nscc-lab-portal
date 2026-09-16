@@ -1,0 +1,41 @@
+{
+  "courses": {
+    "osys1200": {
+      "id": "osys1200",
+      "code": "OSYS1200",
+      "name": "OSYS1200 - Operating Systems",
+      "subtitle": "Windows Lab Virtual Machine",
+      "badge": "Windows VM",
+      "description": "Start, monitor, and connect to your dedicated OSYS1200 Windows lab virtual machine.",
+      "template_vmid": 2002,
+      "preferred_node": "pve2",
+      "os_type": "windows",
+      "supports_rdp": true,
+      "supports_spice": true,
+      "default_username": ".\\Student",
+      "notes": [
+        "Your VM ID is your NSCC Student ID without the leading 'W0' (e.g., W01234567 becomes 1234567).",
+        "Recommended: Download the .rdp connection file once the VM is running and has acquired an IP address.",
+        "Console Access: SPICE console requires Virt-Viewer (`winget install RedHat.VirtViewer`)."
+      ]
+    },
+    "netw2710": {
+      "id": "netw2710",
+      "code": "NETW2710",
+      "name": "NETW2710 - Network Infrastructure",
+      "subtitle": "Network Systems Lab VM",
+      "badge": "Linux / Networking",
+      "description": "Access your assigned virtual machine for NETW2710 network administration and Linux exercises.",
+      "template_vmid": 2001,
+      "preferred_node": "pve",
+      "os_type": "linux",
+      "supports_rdp": false,
+      "supports_spice": true,
+      "default_username": "student",
+      "notes": [
+        "Your VM ID is your NSCC Student ID without the leading 'W0' (e.g., W01234567 becomes 1234567).",
+        "Console Access: SPICE console requires Virt-Viewer (`winget install RedHat.VirtViewer`)."
+      ]
+    }
+  }
+}

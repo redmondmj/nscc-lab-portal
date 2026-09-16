@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+
+# Environment and Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.token
+*.secret
+
+# Proxmox / Virt-Viewer
+*.vv
+*.rdp
+proxmox_mcp.log
+*.log
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

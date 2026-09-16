@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}NSCC Virtual Lab Courses{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 800px;">
+    <div style="text-align: center; margin-bottom: 2rem;">
+        <span class="badge">NSCC Cloud Labs</span>
+        <h1>Select Your Course</h1>
+        <p class="subtitle">Choose your course to access, power on, and connect to your dedicated virtual machine environment.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem;">
+        {% for course_id, course in courses.items() %}
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 12px; padding: 1.75rem; display: flex; flex-direction: column; justify-content: space-between; transition: border-color 0.2s, transform 0.2s;">
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                    <span class="badge {% if course.os_type == 'windows' %}badge-info{% else %}badge-warning{% endif %}">{{ course.badge }}</span>
+                    <span style="font-size: 0.8rem; color: var(--text-muted); font-weight: 600;">{{ course.code }}</span>
+                </div>
+                <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.35rem;">{{ course.name }}</h2>
+                <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.5rem;">
+                    {{ course.description }}
+                </p>
+            </div>
+            <div>
+                <a href="/{{ course.id }}" class="btn btn-primary" style="width: 100%;">
+                    Enter Lab Portal &rarr;
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div style="margin-top: 2.5rem; padding: 1.25rem; background: rgba(15, 23, 42, 0.4); border: 1px dashed var(--border); border-radius: 10px; font-size: 0.85rem; color: var(--text-muted);">
+        <p><strong>Note for Students:</strong> Your VM ID corresponds to your NSCC Student ID (numbers only, excluding the leading <code>W0</code>). If your course is not listed, please consult your course syllabus on Brightspace.</p>
+    </div>
+</div>
+{% endblock %}
