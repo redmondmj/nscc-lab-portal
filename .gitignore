@@ -19,6 +19,8 @@ data/
 *.key
 *.token
 *.secret
+*roster*.json
+*cohort*.json
 
 # Proxmox / Virt-Viewer
 *.vv

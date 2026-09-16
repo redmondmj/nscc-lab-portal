@@ -14,11 +14,17 @@ def seed_database(app):
         # Ensure default_password column exists in lab_templates (safe auto-migration)
         try:
             with db.engine.connect() as conn:
-                cols = [row[1] for row in conn.execute(db.text("PRAGMA table_info(lab_templates)")).fetchall()]
-                if "default_password" not in cols:
+                tmpl_cols = [row[1] for row in conn.execute(db.text("PRAGMA table_info(lab_templates)")).fetchall()]
+                if "default_password" not in tmpl_cols:
                     conn.execute(db.text("ALTER TABLE lab_templates ADD COLUMN default_password VARCHAR(128)"))
                     conn.commit()
                     logger.info("Migrated lab_templates table: added default_password column.")
+
+                user_cols = [row[1] for row in conn.execute(db.text("PRAGMA table_info(users)")).fetchall()]
+                if "cohort" not in user_cols:
+                    conn.execute(db.text("ALTER TABLE users ADD COLUMN cohort VARCHAR(64)"))
+                    conn.commit()
+                    logger.info("Migrated users table: added cohort column.")
         except Exception as e:
             logger.warning(f"Column migration check note: {e}")
 
@@ -120,6 +126,15 @@ def sync_existing_vms_from_proxmox(app, proxmox):
                         student_identifier = parts[1] if len(parts) > 1 else f"user_{vmid}"
                         
                         user = User.query.get(student_identifier)
+                        if not user:
+                            # Try fuzzy match against known users (e.g. 'RobertAtkinson' matching 'robert.atkinson')
+                            norm_id = student_identifier.replace(".", "").lower()
+                            all_users = User.query.all()
+                            for u in all_users:
+                                if u.id.replace(".", "").lower() == norm_id or (u.name and u.name.replace(" ", "").lower() == norm_id):
+                                    user = u
+                                    break
+
                         if not user:
                             user = User(
                                 id=student_identifier,

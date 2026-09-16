@@ -76,10 +76,11 @@ class LabTemplate(db.Model):
 class User(db.Model):
     __tablename__ = "users"
 
-    id = db.Column(db.String(64), primary_key=True)  # Student ID / W# e.g. 'W0123456'
+    id = db.Column(db.String(64), primary_key=True)  # Student ID / username e.g. 'first.last' or 'W0123456'
     email = db.Column(db.String(128), unique=True, nullable=True)
     name = db.Column(db.String(128), nullable=False)
     role = db.Column(db.String(32), default="student")  # 'student', 'instructor', 'admin'
+    cohort = db.Column(db.String(64), nullable=True)    # e.g. 'Lab-Y1-ITSM', 'Lab-Y2-ITSM'
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     vms = db.relationship("StudentVM", backref="user", lazy=True, cascade="all, delete-orphan")
@@ -89,7 +90,8 @@ class User(db.Model):
             "id": self.id,
             "email": self.email,
             "name": self.name,
-            "role": self.role
+            "role": self.role,
+            "cohort": self.cohort
         }
 
 class StudentVM(db.Model):

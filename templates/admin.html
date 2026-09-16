@@ -156,6 +156,7 @@
         <div class="nav-tab active" onclick="switchTab('fleetTab', this)">Student Fleet Overview</div>
         <div class="nav-tab" onclick="switchTab('templatesTab', this)">Course Lab Templates</div>
         <div class="nav-tab" onclick="switchTab('ansibleTab', this)">Ansible & Automation</div>
+        <div class="nav-tab" onclick="switchTab('cohortsTab', this)">Student Cohorts & Rosters</div>
     </div>
 
     <!-- TAB 1: Student Fleet Overview -->
@@ -331,8 +332,82 @@
 ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/audit_lab.yml --limit osys1200
 
 # Ping all active VMs in the fleet:
-ansible -i "http://10.10.0.103/api/admin/ansible/inventory" all -m win_ping
         </pre>
+    </div>
+
+    <!-- TAB 4: Student Cohorts & Rosters -->
+    <div id="cohortsTab" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                <input type="text" id="cohortSearch" class="search-bar" placeholder="Search student name or username..." oninput="filterCohortsTable()">
+                <select id="cohortFilter" class="search-bar" style="width: 170px;" onchange="filterCohortsTable()">
+                    <option value="">All Cohorts</option>
+                    <option value="Lab-Y1-ITSM">Lab-Y1-ITSM (Year 1)</option>
+                    <option value="Lab-Y1-Web">Lab-Y1-Web (Year 1)</option>
+                    <option value="Lab-Y2-ITSM">Lab-Y2-ITSM (Year 2)</option>
+                    <option value="Lab-Y2-Web">Lab-Y2-Web (Year 2)</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button id="btnSyncCohorts" class="btn btn-primary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="syncCohortsFromEntra()">
+                    <span id="syncSpinner" class="spinner" style="display: none;"></span>
+                    <span>&#8635; Sync from Entra ID</span>
+                </button>
+            </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table id="cohortsTable">
+                <thead>
+                    <tr>
+                        <th>Student Name</th>
+                        <th>Username (first.last)</th>
+                        <th>Entra UPN / Email</th>
+                        <th>Cohort</th>
+                        <th>Target Course</th>
+                        <th>Assigned Labs</th>
+                    </tr>
+                </thead>
+                <tbody id="cohortsTableBody">
+                    {% for s in students %}
+                    <tr data-search="{{ s.name }} {{ s.id }} {{ s.email }} {{ s.cohort }}" data-cohort="{{ s.cohort or '' }}">
+                        <td>
+                            <strong>{{ s.name }}</strong>
+                        </td>
+                        <td>
+                            <code style="color: #60a5fa; font-size: 0.9rem;">{{ s.id }}</code>
+                        </td>
+                        <td style="font-family: monospace; font-size: 0.85rem; color: var(--text-muted);">
+                            {{ s.email }}
+                        </td>
+                        <td>
+                            {% if s.cohort %}
+                            <span class="badge badge-info">{{ s.cohort }}</span>
+                            {% else %}
+                            <span class="badge" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8;">Unassigned</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if s.cohort and 'Y1' in s.cohort %}
+                            <span style="color: #38bdf8; font-weight: 600;">OSYS1200 (Year 1)</span>
+                            {% elif s.cohort and 'Y2' in s.cohort %}
+                            <span style="color: #34d399; font-weight: 600;">NETW2710 (Year 2)</span>
+                            {% else %}
+                            <span style="color: var(--text-muted);">&mdash;</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if s.vms %}
+                            <span class="badge badge-success">{{ s.vms|length }} VM(s)</span>
+                            {% else %}
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">No VM provisioned</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
 
@@ -424,10 +499,51 @@ ansible -i "http://10.10.0.103/api/admin/ansible/inventory" all -m win_ping
         document.getElementById("fleetTab").style.display = "none";
         document.getElementById("templatesTab").style.display = "none";
         document.getElementById("ansibleTab").style.display = "none";
+        document.getElementById("cohortsTab").style.display = "none";
 
         document.querySelectorAll(".nav-tab").forEach(tab => tab.classList.remove("active"));
         document.getElementById(tabId).style.display = "block";
         el.classList.add("active");
+    }
+
+    function filterCohortsTable() {
+        const q = document.getElementById("cohortSearch").value.toLowerCase();
+        const cohort = document.getElementById("cohortFilter").value;
+        const rows = document.querySelectorAll("#cohortsTableBody tr");
+
+        rows.forEach(row => {
+            const text = (row.getAttribute("data-search") || "").toLowerCase();
+            const rowCohort = row.getAttribute("data-cohort") || "";
+            const matchesQuery = text.includes(q);
+            const matchesCohort = (!cohort || rowCohort === cohort);
+
+            row.style.display = (matchesQuery && matchesCohort) ? "" : "none";
+        });
+    }
+
+    async function syncCohortsFromEntra() {
+        const btn = document.getElementById("btnSyncCohorts");
+        const spinner = document.getElementById("syncSpinner");
+        btn.disabled = true;
+        spinner.style.display = "inline-block";
+        showAdminAlert("Querying Microsoft Entra ID for student cohort rosters...", "info");
+
+        try {
+            const res = await fetch("/api/admin/cohorts/sync", { method: "POST" });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                const total = data.results.synced_count;
+                showAdminAlert(`Synchronization complete! ${total} student records updated from Entra ID.`, "success");
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                showAdminAlert(data.error || "Failed to sync cohorts", "error");
+            }
+        } catch (e) {
+            showAdminAlert("Sync error: " + e.message, "error");
+        } finally {
+            btn.disabled = false;
+            spinner.style.display = "none";
+        }
     }
 
     function filterFleetTable() {

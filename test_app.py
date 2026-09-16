@@ -287,5 +287,53 @@ class TestProxmoxApp(unittest.TestCase):
         token = generate_guacamole_token(settings, secret)
         self.assertIsInstance(token, str)
 
+    def test_claims_extraction_first_last(self):
+        """Test extracting student ID as first.last from @nscctruro.ca accounts."""
+        from auth import extract_user_from_claims
+        claims = {
+            "preferred_username": "cameron.harris@nscctruro.ca",
+            "name": "Cameron Harris"
+        }
+        user = extract_user_from_claims(claims)
+        self.assertEqual(user["id"], "cameron.harris")
+        self.assertEqual(user["email"], "cameron.harris@nscctruro.ca")
+        self.assertEqual(user["name"], "Cameron Harris")
+        self.assertEqual(user["role"], "student")
+
+    def test_claims_extraction_wnumber(self):
+        """Test extracting student ID as W# from standard college accounts."""
+        from auth import extract_user_from_claims
+        claims = {
+            "preferred_username": "w0492817@nscc.ca",
+            "name": "Jane Student"
+        }
+        user = extract_user_from_claims(claims)
+        self.assertEqual(user["id"], "W0492817")
+        self.assertEqual(user["role"], "student")
+
+    def test_user_cohort_model(self):
+        """Test User model cohort column serialization."""
+        from models import User
+        u = User(
+            id="test.student",
+            name="Test Student",
+            email="test.student@nscctruro.ca",
+            role="student",
+            cohort="Lab-Y1-ITSM"
+        )
+        data = u.to_dict()
+        self.assertEqual(data["cohort"], "Lab-Y1-ITSM")
+        self.assertEqual(data["id"], "test.student")
+
+    def test_admin_cohorts_api(self):
+        """Test /api/admin/cohorts endpoint returns grouped cohorts."""
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "W0999999", "name": "Prof. Smith", "role": "instructor"}
+        res = self.client.get("/api/admin/cohorts")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertIn("cohorts", data)
+        self.assertIn("total", data)
+
 if __name__ == "__main__":
     unittest.main()

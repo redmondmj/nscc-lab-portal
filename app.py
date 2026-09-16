@@ -184,14 +184,38 @@ def api_student_vms(course_id, student_id):
     clean_id = student_id.strip()
     logged_user = session.get("user")
     if logged_user and logged_user.get("role") not in ["instructor", "admin"]:
-        if logged_user.get("id", "").upper() != clean_id.upper() and logged_user.get("id", "").upper().lstrip("W").lstrip("0") != clean_id.upper().lstrip("W").lstrip("0"):
+        logged_id = logged_user.get("id", "")
+        if (logged_id.lower() != clean_id.lower() and 
+            logged_id.upper().lstrip("W").lstrip("0") != clean_id.upper().lstrip("W").lstrip("0")):
             abort(403, description="Access denied. You can only view your own lab environments.")
 
-    # Candidate IDs for query matching (e.g. W0123456, W123456, 123456)
-    candidate_ids = list(set([clean_id, clean_id.upper(), clean_id.lower()]))
+    # Candidate IDs for query matching (e.g. first.last, FirstLast, firstlast, W0123456)
+    candidates = set([clean_id, clean_id.upper(), clean_id.lower()])
+    if "." in clean_id:
+        parts = clean_id.split(".")
+        candidates.add("".join(parts).lower())
+        candidates.add("".join(p.capitalize() for p in parts))
     stripped = clean_id.upper().lstrip("W").lstrip("0")
     if stripped:
-        candidate_ids.extend([stripped, f"W{stripped}", f"W0{stripped}"])
+        candidates.update([stripped, f"W{stripped}", f"W0{stripped}"])
+
+    # Look up registered User record if available
+    user_rec = User.query.filter(
+        (User.id == clean_id) | 
+        (User.id == clean_id.lower()) | 
+        (User.email == f"{clean_id.lower()}@nscctruro.ca")
+    ).first()
+    if user_rec:
+        candidates.add(user_rec.id)
+        if user_rec.email and "@" in user_rec.email:
+            prefix = user_rec.email.split("@")[0].lower()
+            candidates.add(prefix)
+            if "." in prefix:
+                parts = prefix.split(".")
+                candidates.add("".join(parts).lower())
+                candidates.add("".join(p.capitalize() for p in parts))
+
+    candidate_ids = list(candidates)
 
     vms = StudentVM.query.filter(
         StudentVM.course_id == course.id,
@@ -637,6 +661,7 @@ def admin_dashboard():
     templates = LabTemplate.query.all()
     vms = StudentVM.query.order_by(StudentVM.created_at.desc()).all()
     total_students = User.query.filter_by(role="student").count()
+    students = User.query.filter_by(role="student").order_by(User.cohort, User.name).all()
     running_vms = sum(1 for v in vms if v.status == "running")
     published_count = sum(1 for t in templates if t.is_published)
 
@@ -645,6 +670,7 @@ def admin_dashboard():
         courses=courses,
         templates=templates,
         vms=vms,
+        students=students,
         total_vms=len(vms),
         running_vms=running_vms,
         total_students=total_students,
@@ -823,6 +849,34 @@ def api_admin_ansible_inventory():
         }
 
     return jsonify(inventory)
+
+@app.route("/api/admin/cohorts", methods=["GET"])
+@admin_required
+def api_admin_cohorts():
+    """Returns students grouped by cohort."""
+    students = User.query.filter_by(role="student").order_by(User.cohort, User.name).all()
+    grouped = {}
+    for s in students:
+        c = s.cohort or "Unassigned"
+        if c not in grouped:
+            grouped[c] = []
+        grouped[c].append(s.to_dict())
+    return jsonify({"cohorts": grouped, "total": len(students)})
+
+@app.route("/api/admin/cohorts/sync", methods=["POST"])
+@admin_required
+def api_admin_cohorts_sync():
+    """Triggers live synchronization of student cohorts from Entra ID."""
+    from sync_cohorts import sync_entra_cohorts
+    try:
+        res = sync_entra_cohorts(app)
+        proxmox = get_proxmox_client()
+        if proxmox:
+            sync_existing_vms_from_proxmox(app, proxmox)
+        return jsonify({"success": True, "results": res})
+    except Exception as e:
+        logger.error(f"Error during cohort sync: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 # ==========================================
 # Microsoft Entra ID Authentication Endpoints

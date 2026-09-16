@@ -55,21 +55,21 @@ def extract_user_from_claims(claims):
     Parses claims from Entra ID token and determines student ID and role.
     Returns dict: { 'id': 'W0123456', 'email': '...', 'name': '...', 'role': 'student'|'instructor' }
     """
-    email = claims.get("preferred_username") or claims.get("email") or claims.get("upn", "")
-    name = claims.get("name") or email.split("@")[0]
+    email = (claims.get("preferred_username") or claims.get("email") or claims.get("upn", "")).lower()
+    name = claims.get("name") or (email.split("@")[0].title() if "@" in email else email)
 
     # Check admin/instructor status
     admin_emails = [e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "").split(",") if e.strip()]
-    is_admin = email.lower() in admin_emails
+    is_admin = email in admin_emails
 
-    # Extract W-number (e.g. W0123456 or w0123456)
+    # Extract W-number (e.g. W0123456 or w0123456) if explicitly present as username
     student_id = None
-    match = re.search(r'(w\d{6,8})', email, re.IGNORECASE)
-    if match:
-        student_id = match.group(1).upper()
+    w_match = re.search(r'^(w\d{6,8})@', email)
+    if w_match:
+        student_id = w_match.group(1).upper()
     else:
-        # Fallback: username part of email or user object ID
-        student_id = email.split("@")[0].upper() if "@" in email else claims.get("oid", "USER")
+        # For nscctruro.ca accounts or custom usernames, extract first.last (lowercased)
+        student_id = email.split("@")[0].lower() if "@" in email else claims.get("oid", "user").lower()
 
     return {
         "id": student_id,
