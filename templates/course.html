@@ -242,11 +242,9 @@
                             </button>
                         `}
                         
-                        ${isRunning && vm.ip ? `
-                            <button class="btn btn-primary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem; background: #0284c7; border-color: #0369a1;" onclick="openConsole(${vm.vmid})">
-                                &#128421; Open Desktop
-                            </button>
-                        ` : ''}
+                        <button class="btn btn-primary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem; background: #0284c7; border-color: #0369a1;" onclick="openConsole(${vm.vmid})" ${(!isRunning || !vm.ip) ? 'disabled' : ''} title="Open In-Browser HTML5 Desktop">
+                            &#128421; Open Desktop
+                        </button>
                         
                         <button class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="downloadRdp(${vm.vmid})" ${!vm.ip ? 'disabled' : ''} title="Download .rdp file for native Remote Desktop client">
                             &#128187; RDP File

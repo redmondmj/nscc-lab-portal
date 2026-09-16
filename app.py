@@ -532,19 +532,18 @@ def console_view(course_id, vmid):
     if not target_ip:
         abort(400, description=f"VM {vmid} has not acquired an IP address yet. Please ensure the VM is running and guest agent is active.")
 
-    username = vm_record.template.default_username if (vm_record and vm_record.template) else course.default_username or ".\\Student"
+    rdp_settings = {
+        "hostname": target_ip,
+        "port": "3389",
+        "security": "any",
+        "ignore-cert": "true",
+        "resize-method": "display-update"
+    }
 
     conn_settings = {
         "connection": {
             "type": "rdp",
-            "settings": {
-                "hostname": target_ip,
-                "port": "3389",
-                "security": "any",
-                "ignore-cert": "true",
-                "resize-method": "display-update",
-                "username": username
-            }
+            "settings": rdp_settings
         }
     }
 

@@ -258,8 +258,8 @@
 
         function initConnection() {
             const wsProtocol = (window.location.protocol === "https:") ? "wss:" : "ws:";
-            // Behind NPM: wss://labs.nscctruro.ca/guacws?token=...
-            const wsUrl = `${wsProtocol}//${window.location.host}/guacws?token=${encodeURIComponent(TOKEN)}&width=${window.innerWidth}&height=${window.innerHeight - 44}&dpi=96`;
+            // Behind NPM: wss://labs.nscctruro.ca/guacws
+            const wsUrl = `${wsProtocol}//${window.location.host}/guacws`;
 
             console.log("Connecting to Guacamole tunnel:", wsUrl);
             const tunnel = new Guacamole.WebSocketTunnel(wsUrl);
@@ -300,8 +300,9 @@
                 updateStatus("Connection Error", `Error code ${status.code}. The VM may still be booting or RDP service starting.`, true);
             };
 
-            // Connect
-            client.connect();
+            // Connect with token and display parameters
+            const connectParams = `token=${encodeURIComponent(TOKEN)}&width=${window.innerWidth}&height=${window.innerHeight - 44}&dpi=96`;
+            client.connect(connectParams);
         }
 
         // Send Ctrl+Alt+Del sequence
