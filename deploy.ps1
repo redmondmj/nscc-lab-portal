@@ -10,7 +10,7 @@ Write-Host "Syncing files to ${RemoteHost}:${RemoteDir}..." -ForegroundColor Cya
 ssh $RemoteHost "mkdir -p $RemoteDir/config $RemoteDir/templates $RemoteDir/static $RemoteDir/data"
 
 # Copy project files
-scp app.py models.py db_init.py provisioner.py Dockerfile requirements.txt docker-compose.yml "${RemoteHost}:${RemoteDir}/"
+scp app.py models.py db_init.py provisioner.py auth.py Dockerfile requirements.txt docker-compose.yml "${RemoteHost}:${RemoteDir}/"
 scp config/courses.json "${RemoteHost}:${RemoteDir}/config/"
 scp templates/*.html "${RemoteHost}:${RemoteDir}/templates/"
 scp static/logo.png "${RemoteHost}:${RemoteDir}/static/"

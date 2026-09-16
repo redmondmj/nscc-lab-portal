@@ -258,11 +258,37 @@
             <img src="{{ url_for('static', filename='logo.png') }}" alt="NSCC Logo" class="header-logo">
             <span class="header-title">Virtual Lab Portal</span>
         </a>
-        <nav class="header-nav">
-            <a href="/">Courses</a>
-            <a href="/osys1200">OSYS1200</a>
-            <a href="/netw2710">NETW2710</a>
-            <a href="/admin" style="color: #60a5fa; font-weight: 600;">Admin</a>
+        <nav class="header-nav" style="display: flex; align-items: center; gap: 1.25rem;">
+            <a href="/" style="margin-left: 0;">Courses</a>
+            <a href="/osys1200" style="margin-left: 0;">OSYS1200</a>
+            <a href="/netw2710" style="margin-left: 0;">NETW2710</a>
+            {% if not current_user or current_user.role in ['instructor', 'admin'] %}
+            <a href="/admin" style="margin-left: 0; color: #60a5fa; font-weight: 600;">Admin</a>
+            {% endif %}
+
+            {% if current_user %}
+                <div style="display: flex; align-items: center; gap: 0.85rem; padding-left: 1rem; border-left: 1px solid var(--border);">
+                    <div style="text-align: right; line-height: 1.2;">
+                        <span style="display: block; font-size: 0.85rem; font-weight: 600; color: #fff;">{{ current_user.name }}</span>
+                        <span style="display: block; font-size: 0.72rem; color: var(--text-muted); font-family: monospace;">
+                            {{ current_user.id }} &bull; <span style="color: {% if current_user.role in ['instructor', 'admin'] %}#60a5fa{% else %}#34d399{% endif %}; text-transform: uppercase; font-weight: 600;">{{ current_user.role }}</span>
+                        </span>
+                    </div>
+                    <a href="/logout" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; text-decoration: none;">Sign Out</a>
+                </div>
+            {% else %}
+                <div style="padding-left: 0.5rem;">
+                    <a href="/login" class="btn btn-primary" style="font-size: 0.85rem; padding: 0.45rem 0.9rem; text-decoration: none; gap: 0.5rem; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                        <svg width="14" height="14" viewBox="0 0 23 23" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect width="10.5" height="10.5" fill="#F25022"/>
+                            <rect x="12.5" width="10.5" height="10.5" fill="#7FBA00"/>
+                            <rect y="12.5" width="10.5" height="10.5" fill="#00A4EF"/>
+                            <rect x="12.5" y="12.5" width="10.5" height="10.5" fill="#FFB900"/>
+                        </svg>
+                        <span>Sign in with Microsoft</span>
+                    </a>
+                </div>
+            {% endif %}
         </nav>
     </header>
 

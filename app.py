@@ -3,16 +3,29 @@ import json
 import logging
 import traceback
 from pathlib import Path
-from flask import Flask, Response, jsonify, render_template, request, abort
+from functools import wraps
+from flask import Flask, Response, jsonify, render_template, request, abort, session, redirect, url_for
 
 from models import db, Course, LabTemplate, User, StudentVM
 from db_init import seed_database, sync_existing_vms_from_proxmox
 from provisioner import provision_student_vm
+from auth import initiate_auth_flow, acquire_token_by_flow, extract_user_from_claims
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
+# Auto-load .env file if present in the workspace root
+env_file = Path(__file__).parent / ".env"
+if env_file.exists():
+    with open(env_file, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+
 app = Flask(__name__, static_folder="static", template_folder="templates")
+app.secret_key = os.environ.get("SECRET_KEY", "nscc-lab-portal-secret-key-39281")
 
 # Configure SQLite Database
 DB_PATH = Path(__file__).parent / "data" / "portal.db"
@@ -24,6 +37,30 @@ db.init_app(app)
 
 # Initialize and seed database on startup
 seed_database(app)
+
+@app.context_processor
+def inject_user():
+    return dict(current_user=session.get("user"))
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get("user") and os.environ.get("ENTRA_CLIENT_ID"):
+            return redirect(url_for("login", next=request.url))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = session.get("user")
+        if os.environ.get("ENTRA_CLIENT_ID"):
+            if not user:
+                return redirect(url_for("login", next=request.url))
+            if user.get("role") not in ["instructor", "admin"]:
+                abort(403, description="Access denied. Instructor or administrator privileges required.")
+        return f(*args, **kwargs)
+    return decorated_function
 
 def get_proxmox_client():
     """Initializes and returns a ProxmoxAPI client using environment variables."""
@@ -141,7 +178,21 @@ def api_student_vms(course_id, student_id):
         return jsonify({"error": "Course not found"}), 404
 
     clean_id = student_id.strip()
-    vms = StudentVM.query.filter_by(course_id=course.id, user_id=clean_id).all()
+    logged_user = session.get("user")
+    if logged_user and logged_user.get("role") not in ["instructor", "admin"]:
+        if logged_user.get("id", "").upper() != clean_id.upper() and logged_user.get("id", "").upper().lstrip("W").lstrip("0") != clean_id.upper().lstrip("W").lstrip("0"):
+            abort(403, description="Access denied. You can only view your own lab environments.")
+
+    # Candidate IDs for query matching (e.g. W0123456, W123456, 123456)
+    candidate_ids = list(set([clean_id, clean_id.upper(), clean_id.lower()]))
+    stripped = clean_id.upper().lstrip("W").lstrip("0")
+    if stripped:
+        candidate_ids.extend([stripped, f"W{stripped}", f"W0{stripped}"])
+
+    vms = StudentVM.query.filter(
+        StudentVM.course_id == course.id,
+        StudentVM.user_id.in_(candidate_ids)
+    ).all()
     
     # Also check if student has any VM discovered by ID matching
     result = []
@@ -186,6 +237,11 @@ def api_provision_vm(course_id):
 
     if not student_id or not template_id:
         return jsonify({"success": False, "error": "student_id and template_id are required"}), 400
+
+    logged_user = session.get("user")
+    if logged_user and logged_user.get("role") not in ["instructor", "admin"]:
+        if logged_user.get("id", "").upper() != student_id.upper():
+            abort(403, description="Access denied. You can only provision labs for yourself.")
 
     template = LabTemplate.query.get(template_id)
     if not template or not template.is_published or template.course_id != course.id:
@@ -402,6 +458,7 @@ gatewayusagemethod:i:0
 # ==========================================
 
 @app.route("/admin")
+@admin_required
 def admin_dashboard():
     """Renders the Instructor Fleet & Lab Manager console."""
     courses = Course.query.all()
@@ -423,6 +480,7 @@ def admin_dashboard():
     )
 
 @app.route("/api/admin/fleet", methods=["GET"])
+@admin_required
 def api_admin_fleet_refresh():
     """Syncs live status from Proxmox for all registered student VMs."""
     proxmox = get_proxmox_client()
@@ -448,6 +506,7 @@ def api_admin_fleet_refresh():
     return jsonify({"success": True, "updated": updated, "total": len(vms)})
 
 @app.route("/api/admin/templates", methods=["POST"])
+@admin_required
 def api_admin_add_template():
     """Registers and publishes a new template in the portal."""
     data = request.get_json() or {}
@@ -482,6 +541,7 @@ def api_admin_add_template():
     return jsonify({"success": True, "template": tmpl.to_dict()}), 201
 
 @app.route("/api/admin/templates/<int:template_id>", methods=["PATCH"])
+@admin_required
 def api_admin_update_template(template_id):
     """Updates publish status or details for a template."""
     tmpl = db.session.get(LabTemplate, template_id)
@@ -500,6 +560,7 @@ def api_admin_update_template(template_id):
     return jsonify({"success": True, "template": tmpl.to_dict()})
 
 @app.route("/api/admin/templates/<int:template_id>", methods=["DELETE"])
+@admin_required
 def api_admin_delete_template(template_id):
     """Removes a template definition from the portal."""
     tmpl = db.session.get(LabTemplate, template_id)
@@ -511,6 +572,7 @@ def api_admin_delete_template(template_id):
     return jsonify({"success": True, "message": "Template removed from portal."})
 
 @app.route("/api/admin/vm/<int:vmid>", methods=["DELETE"])
+@admin_required
 def api_admin_delete_vm(vmid):
     """Deletes a student VM from Proxmox and database."""
     proxmox = get_proxmox_client()
@@ -533,6 +595,7 @@ def api_admin_delete_vm(vmid):
     return jsonify({"success": True, "message": f"VM {vmid} deleted."})
 
 @app.route("/api/admin/ansible/inventory", methods=["GET"])
+@admin_required
 def api_admin_ansible_inventory():
     """
     Exports dynamic Ansible JSON inventory.
@@ -583,6 +646,93 @@ def api_admin_ansible_inventory():
         }
 
     return jsonify(inventory)
+
+# ==========================================
+# Microsoft Entra ID Authentication Endpoints
+# ==========================================
+
+@app.route("/login")
+def login():
+    """Initiates Microsoft Entra ID OAuth2 authentication."""
+    if not os.environ.get("ENTRA_CLIENT_ID"):
+        logger.warning("SSO attempted but ENTRA_CLIENT_ID is not configured.")
+        return redirect(request.args.get("next") or url_for("index"))
+
+    redirect_uri = os.environ.get("ENTRA_REDIRECT_URI") or url_for("auth_callback", _external=True)
+    next_url = request.args.get("next") or url_for("index")
+    session["auth_next"] = next_url
+
+    flow = initiate_auth_flow(redirect_uri)
+    if not flow or "auth_uri" not in flow:
+        abort(500, description="Failed to initialize Microsoft Entra authentication.")
+
+    session["auth_flow"] = flow
+    return redirect(flow["auth_uri"])
+
+@app.route("/auth/callback")
+def auth_callback():
+    """Handles callback from Microsoft Entra ID with authorization code."""
+    error = request.args.get("error")
+    if error:
+        error_desc = request.args.get("error_description", error)
+        logger.error(f"Entra ID auth error: {error} - {error_desc}")
+        abort(400, description=f"Authentication failed: {error_desc}")
+
+    auth_flow = session.pop("auth_flow", None)
+    if not auth_flow:
+        abort(400, description="Authentication session expired or invalid. Please sign in again.")
+
+    result = acquire_token_by_flow(auth_flow, request.args)
+
+    if not result or "id_token_claims" not in result:
+        err_msg = result.get("error_description") if result else "Failed to acquire token."
+        logger.error(f"Token acquisition failed: {err_msg}")
+        abort(401, description=f"Sign-in failed: {err_msg}")
+
+    claims = result["id_token_claims"]
+    user_info = extract_user_from_claims(claims)
+
+    # Sync user with SQLite DB
+    user_record = db.session.get(User, user_info["id"])
+    if not user_record:
+        user_record = User(
+            id=user_info["id"],
+            name=user_info["name"],
+            email=user_info["email"],
+            role=user_info["role"]
+        )
+        db.session.add(user_record)
+    else:
+        user_record.name = user_info["name"]
+        user_record.email = user_info["email"]
+        user_record.role = user_info["role"]
+    db.session.commit()
+
+    # Store user in session
+    session["user"] = user_record.to_dict()
+    logger.info(f"User signed in: {user_record.name} ({user_record.id}) [{user_record.role}]")
+
+    next_url = session.pop("auth_next", url_for("index"))
+    return redirect(next_url)
+
+@app.route("/logout")
+def logout():
+    """Logs out user and clears session."""
+    user = session.pop("user", None)
+    if user:
+        logger.info(f"User logged out: {user.get('name')} ({user.get('id')})")
+    session.clear()
+    return redirect(url_for("index"))
+
+@app.route("/api/me")
+def api_me():
+    """Returns currently authenticated user profile."""
+    user = session.get("user")
+    return jsonify({
+        "authenticated": user is not None,
+        "user": user,
+        "sso_enabled": bool(os.environ.get("ENTRA_CLIENT_ID"))
+    })
 
 # ==========================================
 # Legacy Route Compatibility

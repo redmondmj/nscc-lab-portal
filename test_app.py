@@ -36,10 +36,16 @@ class TestProxmoxApp(unittest.TestCase):
 
     def test_api_status_unconfigured(self):
         """Test API returns 503 when Proxmox env vars are missing."""
-        res = self.client.get("/api/osys1200/status/123456")
-        self.assertEqual(res.status_code, 503)
-        data = res.get_json()
-        self.assertFalse(data["found"])
+        import os
+        old_token = os.environ.pop("PROXMOX_API_TOKEN_SECRET", None)
+        try:
+            res = self.client.get("/api/osys1200/status/123456")
+            self.assertEqual(res.status_code, 503)
+            data = res.get_json()
+            self.assertFalse(data["found"])
+        finally:
+            if old_token:
+                os.environ["PROXMOX_API_TOKEN_SECRET"] = old_token
 
     def test_api_templates_list(self):
         """Test listing published lab templates for OSYS1200."""
@@ -69,6 +75,8 @@ class TestProxmoxApp(unittest.TestCase):
 
     def test_admin_dashboard_route(self):
         """Test instructor admin console renders successfully."""
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "W0999999", "name": "Prof. Smith", "role": "instructor"}
         res = self.client.get("/admin")
         self.assertEqual(res.status_code, 200)
         self.assertIn(b"Faculty Command Center", res.data)
@@ -77,6 +85,8 @@ class TestProxmoxApp(unittest.TestCase):
 
     def test_admin_ansible_inventory(self):
         """Test dynamic Ansible inventory endpoint."""
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "W0999999", "name": "Prof. Smith", "role": "instructor"}
         res = self.client.get("/api/admin/ansible/inventory")
         self.assertEqual(res.status_code, 200)
         data = res.get_json()
@@ -86,6 +96,9 @@ class TestProxmoxApp(unittest.TestCase):
 
     def test_admin_template_lifecycle(self):
         """Test adding, updating, and deleting a template via admin API."""
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "W0999999", "name": "Prof. Smith", "role": "instructor"}
+
         # Add template
         add_res = self.client.post("/api/admin/templates", json={
             "course_id": "osys1200",
@@ -107,6 +120,90 @@ class TestProxmoxApp(unittest.TestCase):
         # Delete template
         del_res = self.client.delete(f"/api/admin/templates/{tmpl_id}")
         self.assertEqual(del_res.status_code, 200)
+
+    def test_api_me_unauthenticated(self):
+        """Test /api/me returns unauthenticated status when no session exists."""
+        res = self.client.get("/api/me")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertFalse(data["authenticated"])
+        self.assertIsNone(data["user"])
+
+    def test_api_me_authenticated(self):
+        """Test /api/me returns user data when session is active."""
+        with self.client.session_transaction() as sess:
+            sess["user"] = {
+                "id": "W0123456",
+                "name": "Test Student",
+                "email": "w0123456@nscc.ca",
+                "role": "student"
+            }
+        res = self.client.get("/api/me")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["authenticated"])
+        self.assertEqual(data["user"]["id"], "W0123456")
+        self.assertEqual(data["user"]["role"], "student")
+
+    def test_logout(self):
+        """Test /logout clears user session and redirects to index."""
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "W0123456", "name": "Student", "role": "student"}
+        res = self.client.get("/logout")
+        self.assertEqual(res.status_code, 302)
+        with self.client.session_transaction() as sess:
+            self.assertNotIn("user", sess)
+
+    def test_admin_rbac_with_sso_enabled(self):
+        """Test RBAC on admin console when SSO is configured."""
+        import os
+        old_client_id = os.environ.get("ENTRA_CLIENT_ID")
+        try:
+            os.environ["ENTRA_CLIENT_ID"] = "mock-client-id"
+
+            # 1. Unauthenticated -> Redirects to /login
+            res_anon = self.client.get("/admin")
+            self.assertEqual(res_anon.status_code, 302)
+            self.assertIn("/login", res_anon.headers.get("Location", ""))
+
+            # 2. Authenticated as Student -> 403 Forbidden
+            with self.client.session_transaction() as sess:
+                sess["user"] = {"id": "W0123456", "name": "Student", "role": "student"}
+            res_student = self.client.get("/admin")
+            self.assertEqual(res_student.status_code, 403)
+
+            # 3. Authenticated as Instructor -> 200 OK
+            with self.client.session_transaction() as sess:
+                sess["user"] = {"id": "W0999999", "name": "Prof. Smith", "role": "instructor"}
+            res_instructor = self.client.get("/admin")
+            self.assertEqual(res_instructor.status_code, 200)
+            self.assertIn(b"Faculty Command Center", res_instructor.data)
+        finally:
+            if old_client_id is not None:
+                os.environ["ENTRA_CLIENT_ID"] = old_client_id
+            else:
+                os.environ.pop("ENTRA_CLIENT_ID", None)
+
+    def test_student_isolation(self):
+        """Test students cannot view or provision for other student IDs."""
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "W0123456", "name": "Student A", "role": "student"}
+
+        # Attempt to access Student B's VMs
+        res = self.client.get("/api/osys1200/student/W0987654/vms")
+        self.assertEqual(res.status_code, 403)
+
+        # Attempt to access own VMs
+        res_own = self.client.get("/api/osys1200/student/W0123456/vms")
+        self.assertEqual(res_own.status_code, 200)
+
+    def test_login_redirect(self):
+        """Test /login redirects to Microsoft Entra ID authorization endpoint."""
+        import os
+        res = self.client.get("/login")
+        if os.environ.get("ENTRA_CLIENT_ID"):
+            self.assertEqual(res.status_code, 302)
+            self.assertIn("login.microsoftonline.com", res.headers.get("Location", ""))
 
 if __name__ == "__main__":
     unittest.main()

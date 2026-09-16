@@ -10,23 +10,60 @@
         <p class="subtitle">{{ course.subtitle }} &bull; Cluster Node <code>{{ course.preferred_node }}</code></p>
     </div>
 
-    <!-- Student ID Entry Form -->
+    <!-- Student ID Entry / Authenticated Section -->
     <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.75rem;">
-        <label for="studentId" style="display: block; font-weight: 600; font-size: 0.95rem; margin-bottom: 0.5rem; color: #f8fafc;">
-            Enter your NSCC Student ID (W#):
+        {% if current_user %}
+        <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+                <span style="font-size: 0.75rem; color: #34d399; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em; display: flex; align-items: center; gap: 0.35rem;">
+                    <span style="width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block;"></span>
+                    Authenticated NSCC Account
+                </span>
+                <h3 style="font-size: 1.3rem; color: #fff; margin-top: 0.25rem;">
+                    {{ current_user.name }} <code style="font-size: 0.95rem; margin-left: 0.4rem;">{{ current_user.id }}</code>
+                </h3>
+                <span style="font-size: 0.82rem; color: var(--text-muted); font-family: monospace;">{{ current_user.email }}</span>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <input type="hidden" id="studentId" value="{{ current_user.id }}">
+                <button id="btnCheckStatus" class="btn btn-primary" onclick="loadStudentLabs()">
+                    <span id="checkSpinner" class="spinner" style="display: none;"></span>
+                    <span>Refresh Labs</span>
+                </button>
+            </div>
+        </div>
+        {% else %}
+        <div style="margin-bottom: 1.25rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
+            <div>
+                <strong style="color: #fff; font-size: 0.95rem; display: block;">Instant Access with Microsoft 365</strong>
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">Sign in with your NSCC account to load and manage your lab VMs with 1-click.</p>
+            </div>
+            <a href="/login?next={{ request.path }}" class="btn btn-primary" style="font-size: 0.85rem; padding: 0.5rem 1rem; text-decoration: none; gap: 0.5rem; white-space: nowrap;">
+                <svg width="14" height="14" viewBox="0 0 23 23" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="10.5" height="10.5" fill="#F25022"/>
+                    <rect x="12.5" width="10.5" height="10.5" fill="#7FBA00"/>
+                    <rect y="12.5" width="10.5" height="10.5" fill="#00A4EF"/>
+                    <rect x="12.5" y="12.5" width="10.5" height="10.5" fill="#FFB900"/>
+                </svg>
+                <span>Sign in with Microsoft</span>
+            </a>
+        </div>
+        <label for="studentId" style="display: block; font-weight: 600; font-size: 0.92rem; margin-bottom: 0.5rem; color: #cbd5e1;">
+            Or manually enter your Student ID (W#):
         </label>
         <div style="display: flex; gap: 0.75rem;">
             <input type="text" id="studentId" placeholder="e.g. W0123456 or 123456" 
                    style="flex: 1; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: #0f172a; color: #fff; font-size: 1rem; font-family: monospace;"
                    autofocus>
-            <button id="btnCheckStatus" class="btn btn-primary" onclick="loadStudentLabs()">
+            <button id="btnCheckStatus" class="btn btn-secondary" onclick="loadStudentLabs()">
                 <span id="checkSpinner" class="spinner" style="display: none;"></span>
-                <span>Load My Labs</span>
+                <span>Load Labs</span>
             </button>
         </div>
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.6rem;">
             Enter your student ID to view your provisioned VMs or deploy published lab templates.
         </p>
+        {% endif %}
     </div>
 
     <!-- Alert / Toast Banner -->
@@ -87,17 +124,20 @@
 
     function sanitizeId(raw) {
         if (!raw) return "";
-        let clean = raw.trim().toUpperCase();
-        if (clean.startsWith("W0")) {
-            clean = clean.substring(2);
-        } else if (clean.startsWith("W")) {
-            clean = clean.substring(1);
-        }
-        return clean.replace(/\D/g, "");
+        return raw.trim().toUpperCase();
     }
 
-    document.getElementById("studentId").addEventListener("keypress", function(e) {
-        if (e.key === "Enter") {
+    const studentInput = document.getElementById("studentId");
+    if (studentInput) {
+        studentInput.addEventListener("keypress", function(e) {
+            if (e.key === "Enter") {
+                loadStudentLabs();
+            }
+        });
+    }
+
+    window.addEventListener("DOMContentLoaded", function() {
+        if (studentInput && studentInput.value.trim()) {
             loadStudentLabs();
         }
     });
