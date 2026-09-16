@@ -3,82 +3,30 @@
 {% block title %}{{ course.name }} - Lab Portal{% endblock %}
 
 {% block content %}
-<div class="container">
+<div class="container" style="max-width: 760px;">
     <div style="text-align: center; margin-bottom: 2rem;">
-        <span class="badge {% if course.os_type == 'windows' %}badge-info{% else %}badge-warning{% endif %}">{{ course.badge }}</span>
+        <span class="badge {% if course.supports_rdp %}badge-info{% else %}badge-warning{% endif %}">{{ course.badge }}</span>
         <h1>{{ course.name }}</h1>
-        <p class="subtitle">{{ course.subtitle }} &bull; Node <code>{{ course.preferred_node }}</code></p>
+        <p class="subtitle">{{ course.subtitle }} &bull; Cluster Node <code>{{ course.preferred_node }}</code></p>
     </div>
 
     <!-- Student ID Entry Form -->
     <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.75rem;">
         <label for="studentId" style="display: block; font-weight: 600; font-size: 0.95rem; margin-bottom: 0.5rem; color: #f8fafc;">
-            Enter your NSCC Student ID or VM ID:
+            Enter your NSCC Student ID (W#):
         </label>
         <div style="display: flex; gap: 0.75rem;">
             <input type="text" id="studentId" placeholder="e.g. W0123456 or 123456" 
                    style="flex: 1; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: #0f172a; color: #fff; font-size: 1rem; font-family: monospace;"
                    autofocus>
-            <button id="btnCheckStatus" class="btn btn-secondary" onclick="checkStatus()">
+            <button id="btnCheckStatus" class="btn btn-primary" onclick="loadStudentLabs()">
                 <span id="checkSpinner" class="spinner" style="display: none;"></span>
-                <span>Check VM</span>
+                <span>Load My Labs</span>
             </button>
         </div>
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.6rem;">
-            Type your full student ID (leading <code>W0</code> is automatically handled).
+            Enter your student ID to view your provisioned VMs or deploy published lab templates.
         </p>
-    </div>
-
-    <!-- VM Status & Actions Card (Hidden until checked or preloaded) -->
-    <div id="vmCard" style="display: none; background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.75rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 1rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem;">
-            <div>
-                <span style="font-size: 0.85rem; color: var(--text-muted); display: block;">Virtual Machine</span>
-                <strong id="vmNameDisplay" style="font-size: 1.15rem; color: #fff;">--</strong>
-                <span id="vmIdDisplay" style="font-size: 0.85rem; color: var(--text-muted); margin-left: 0.5rem;"></span>
-            </div>
-            <div id="vmStatusBadge">
-                <span class="badge">Checking...</span>
-            </div>
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 1.5rem; font-size: 0.85rem;">
-            <div>
-                <span style="color: var(--text-muted); display: block;">Host Node:</span>
-                <strong id="vmNodeDisplay" style="color: #cbd5e1;">--</strong>
-            </div>
-            <div>
-                <span style="color: var(--text-muted); display: block;">IP Address:</span>
-                <strong id="vmIpDisplay" style="color: #38bdf8;">--</strong>
-            </div>
-        </div>
-
-        <!-- Action Buttons -->
-        <div id="actionButtons" style="display: flex; flex-direction: column; gap: 0.75rem;">
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                <button id="btnStartVm" class="btn btn-success" onclick="startVm()">
-                    <span id="startSpinner" class="spinner" style="display: none;"></span>
-                    <span id="startBtnText">&#9654; Start VM</span>
-                </button>
-                <button id="btnRestartVm" class="btn btn-secondary" onclick="restartVm()">
-                    <span id="restartSpinner" class="spinner" style="display: none;"></span>
-                    <span>&#8635; Restart VM</span>
-                </button>
-            </div>
-
-            <div style="display: flex; gap: 0.75rem; margin-top: 0.25rem;">
-                {% if course.supports_rdp %}
-                <button id="btnDownloadRdp" class="btn btn-primary" style="flex: 1;" onclick="downloadRdp()" disabled>
-                    <span>&#128187; Connect via RDP (.rdp)</span>
-                </button>
-                {% endif %}
-                {% if course.supports_spice %}
-                <button id="btnDownloadVv" class="btn btn-secondary" style="flex: 1;" onclick="downloadVv()">
-                    <span>&#128225; Virt-Viewer (.vv)</span>
-                </button>
-                {% endif %}
-            </div>
-        </div>
     </div>
 
     <!-- Alert / Toast Banner -->
@@ -86,15 +34,43 @@
         <span id="alertMessage"></span>
     </div>
 
+    <!-- Active Student VMs Section -->
+    <div id="myVmsSection" style="display: none; margin-bottom: 2rem;">
+        <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between;">
+            <span>My Virtual Machines</span>
+            <span id="vmCountBadge" class="badge">0 Active</span>
+        </h2>
+        <div id="vmsListContainer" style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- Rendered dynamically -->
+        </div>
+    </div>
+
+    <!-- Available Templates for On-Demand Provisioning -->
+    <div id="templatesSection" style="display: none; margin-bottom: 2rem;">
+        <h2 style="font-size: 1.25rem; font-weight: 700; color: #fff; margin-bottom: 0.5rem;">
+            Available Lab Templates
+        </h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1rem;">
+            Need a lab environment? Choose a published template below to deploy your dedicated VM on demand.
+        </p>
+        <div id="templatesListContainer" style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- Rendered dynamically -->
+        </div>
+    </div>
+
     <!-- Instructions / Tips -->
     <div style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
         <h3 style="font-size: 1rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.75rem;">Course Lab Notes:</h3>
         <ul style="padding-left: 1.25rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.6;">
-            {% for note in course.notes %}
-            <li>{{ note|safe }}</li>
-            {% endfor %}
+            <li>Your VM ID and name are tracked automatically via your NSCC Student ID.</li>
+            {% if course.supports_rdp %}
+            <li><strong>Remote Desktop (RDP):</strong> Once your VM is running and has acquired an IP, click <em>Connect via RDP</em> to download a pre-configured shortcut.</li>
+            {% endif %}
+            {% if course.supports_spice %}
+            <li><strong>Virt-Viewer Console:</strong> If network or display issues occur, use Virt-Viewer (<code>winget install RedHat.VirtViewer</code>).</li>
+            {% endif %}
             {% if course.default_username %}
-            <li>Default VM User: <code>{{ course.default_username }}</code></li>
+            <li>Default Login Username: <code>{{ course.default_username }}</code></li>
             {% endif %}
         </ul>
     </div>
@@ -104,8 +80,10 @@
 {% block extra_scripts %}
 <script>
     const COURSE_ID = "{{ course.id }}";
-    let currentVmid = "";
-    let statusPollingTimer = null;
+    let currentStudentId = "";
+    let publishedTemplates = [];
+    let studentVms = [];
+    let pollingTimers = {};
 
     function sanitizeId(raw) {
         if (!raw) return "";
@@ -120,7 +98,7 @@
 
     document.getElementById("studentId").addEventListener("keypress", function(e) {
         if (e.key === "Enter") {
-            checkStatus();
+            loadStudentLabs();
         }
     });
 
@@ -136,136 +114,222 @@
         document.getElementById("alertBox").style.display = "none";
     }
 
-    async function checkStatus() {
+    async function loadStudentLabs() {
         const rawInput = document.getElementById("studentId").value;
-        const vmid = sanitizeId(rawInput);
-        if (!vmid) {
-            showAlert("Please enter a valid student or VM ID number.", "error");
+        const studentId = sanitizeId(rawInput);
+        if (!studentId) {
+            showAlert("Please enter a valid student ID number.", "error");
             return;
         }
 
-        currentVmid = vmid;
+        currentStudentId = studentId;
         hideAlert();
         document.getElementById("checkSpinner").style.display = "inline-block";
         document.getElementById("btnCheckStatus").disabled = true;
 
         try {
-            const res = await fetch(`/api/${COURSE_ID}/status/${vmid}`);
-            const data = await res.json();
+            // 1. Fetch published templates
+            const tmplRes = await fetch(`/api/${COURSE_ID}/templates`);
+            const tmplData = await tmplRes.json();
+            publishedTemplates = tmplData.templates || [];
 
-            document.getElementById("vmCard").style.display = "block";
-            document.getElementById("vmIdDisplay").innerText = `(ID: ${vmid})`;
+            // 2. Fetch student's provisioned VMs
+            const vmRes = await fetch(`/api/${COURSE_ID}/student/${studentId}/vms`);
+            const vmData = await vmRes.json();
+            studentVms = vmData.vms || [];
 
-            if (!res.ok || !data.found) {
-                document.getElementById("vmNameDisplay").innerText = "Not Found";
-                document.getElementById("vmStatusBadge").innerHTML = `<span class="badge badge-danger">Not Found</span>`;
-                document.getElementById("vmNodeDisplay").innerText = "N/A";
-                document.getElementById("vmIpDisplay").innerText = "N/A";
-                document.getElementById("btnStartVm").disabled = true;
-                document.getElementById("btnRestartVm").disabled = true;
-                if (document.getElementById("btnDownloadRdp")) document.getElementById("btnDownloadRdp").disabled = true;
-                if (document.getElementById("btnDownloadVv")) document.getElementById("btnDownloadVv").disabled = true;
-
-                showAlert(`No VM found matching ID <code>${vmid}</code> for this course. Please verify your Student ID.`, "error");
-                return;
-            }
-
-            // VM Found
-            document.getElementById("vmNameDisplay").innerText = data.name || `VM ${vmid}`;
-            document.getElementById("vmNodeDisplay").innerText = data.node || "pve";
-            document.getElementById("vmIpDisplay").innerText = data.ip || (data.status === "running" ? "Acquiring DHCP..." : "Offline");
-
-            const isRunning = (data.status === "running");
-            if (isRunning) {
-                document.getElementById("vmStatusBadge").innerHTML = `<span class="badge badge-success">Running</span>`;
-                document.getElementById("btnStartVm").disabled = true;
-                document.getElementById("startBtnText").innerText = "Running";
-                document.getElementById("btnRestartVm").disabled = false;
-                if (document.getElementById("btnDownloadVv")) document.getElementById("btnDownloadVv").disabled = false;
-                
-                // If IP is present and RDP is supported
-                if (document.getElementById("btnDownloadRdp")) {
-                    document.getElementById("btnDownloadRdp").disabled = !data.ip;
+            // 3. Fallback check: If no registered DB VMs, check by ID or legacy name
+            if (studentVms.length === 0) {
+                const legacyRes = await fetch(`/api/${COURSE_ID}/status/${studentId}`);
+                if (legacyRes.ok) {
+                    const lData = await legacyRes.json();
+                    if (lData.found) {
+                        studentVms.push({
+                            vmid: lData.vmid,
+                            name: lData.name,
+                            node: lData.node,
+                            status: lData.status,
+                            ip: lData.ip,
+                            template_name: "Enrolled Course VM"
+                        });
+                    }
                 }
-            } else {
-                document.getElementById("vmStatusBadge").innerHTML = `<span class="badge badge-warning">Stopped</span>`;
-                document.getElementById("btnStartVm").disabled = false;
-                document.getElementById("startBtnText").innerText = "▶ Start VM";
-                document.getElementById("btnRestartVm").disabled = true;
-                if (document.getElementById("btnDownloadRdp")) document.getElementById("btnDownloadRdp").disabled = true;
-                if (document.getElementById("btnDownloadVv")) document.getElementById("btnDownloadVv").disabled = true;
             }
+
+            renderDashboard();
 
         } catch (err) {
-            showAlert("Failed to connect to backend server: " + err.message, "error");
+            showAlert("Failed to communicate with portal backend: " + err.message, "error");
         } finally {
             document.getElementById("checkSpinner").style.display = "none";
             document.getElementById("btnCheckStatus").disabled = false;
         }
     }
 
-    async function startVm() {
-        if (!currentVmid) return;
-        document.getElementById("startSpinner").style.display = "inline-block";
-        document.getElementById("btnStartVm").disabled = true;
+    function renderDashboard() {
+        // Render My VMs
+        const vmContainer = document.getElementById("vmsListContainer");
+        const vmSection = document.getElementById("myVmsSection");
+        vmContainer.innerHTML = "";
+
+        if (studentVms.length > 0) {
+            document.getElementById("vmCountBadge").innerText = `${studentVms.length} Provisioned`;
+            studentVms.forEach(vm => {
+                const isRunning = (vm.status === "running");
+                const card = document.createElement("div");
+                card.style.cssText = "background: rgba(15, 23, 42, 0.8); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem;";
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem;">
+                        <div>
+                            <span class="badge ${isRunning ? 'badge-success' : 'badge-warning'}">${vm.status.toUpperCase()}</span>
+                            <h3 style="font-size: 1.15rem; color: #fff; margin-top: 0.25rem;">${vm.template_name || vm.name}</h3>
+                            <span style="font-size: 0.8rem; color: var(--text-muted); font-family: monospace;">${vm.name} (VMID: ${vm.vmid}) &bull; Node: ${vm.node}</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <span style="font-size: 0.8rem; color: var(--text-muted); display: block;">IP Address</span>
+                            <strong style="color: #38bdf8; font-family: monospace; font-size: 0.95rem;">${vm.ip || (isRunning ? 'Acquiring...' : 'Offline')}</strong>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; pt-3; border-top: 1px solid var(--border); padding-top: 0.75rem;">
+                        ${isRunning ? `
+                            <button class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="restartVm(${vm.vmid})">
+                                &#8635; Restart
+                            </button>
+                        ` : `
+                            <button class="btn btn-success" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="startVm(${vm.vmid})">
+                                &#9654; Start VM
+                            </button>
+                        `}
+                        
+                        <button class="btn btn-primary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="downloadRdp(${vm.vmid})" ${!vm.ip ? 'disabled' : ''}>
+                            &#128187; Connect RDP
+                        </button>
+                        <button class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="downloadVv(${vm.vmid})">
+                            &#128225; Virt-Viewer
+                        </button>
+                    </div>
+                `;
+                vmContainer.appendChild(card);
+            });
+            vmSection.style.display = "block";
+        } else {
+            vmSection.style.display = "none";
+        }
+
+        // Render Available Templates
+        const tmplContainer = document.getElementById("templatesListContainer");
+        const tmplSection = document.getElementById("templatesSection");
+        tmplContainer.innerHTML = "";
+
+        if (publishedTemplates.length > 0) {
+            publishedTemplates.forEach(tmpl => {
+                const alreadyProvisioned = studentVms.some(v => v.template_id === tmpl.id);
+                const card = document.createElement("div");
+                card.style.cssText = "background: rgba(15, 23, 42, 0.5); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem;";
+                card.innerHTML = `
+                    <div style="flex: 1;">
+                        <span class="badge ${tmpl.os_type === 'windows' ? 'badge-info' : 'badge-warning'}">${tmpl.os_type.toUpperCase()}</span>
+                        <h4 style="font-size: 1.05rem; color: #fff; margin-top: 0.2rem;">${tmpl.name}</h4>
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">${tmpl.description}</p>
+                    </div>
+                    <div>
+                        ${alreadyProvisioned ? `
+                            <span class="badge badge-success" style="padding: 0.5rem 0.75rem;">Already Deployed</span>
+                        ` : `
+                            <button id="btnDeploy_${tmpl.id}" class="btn btn-primary" style="white-space: nowrap;" onclick="provisionTemplate(${tmpl.id})">
+                                <span id="deploySpinner_${tmpl.id}" class="spinner" style="display: none;"></span>
+                                <span>+ Deploy Lab VM</span>
+                            </button>
+                        `}
+                    </div>
+                `;
+                tmplContainer.appendChild(card);
+            });
+            tmplSection.style.display = "block";
+        } else {
+            tmplSection.style.display = "none";
+        }
+
+        if (studentVms.length === 0 && publishedTemplates.length === 0) {
+            showAlert(`No virtual machines or published lab templates found for student <code>${currentStudentId}</code>.`, "info");
+        }
+    }
+
+    async function provisionTemplate(templateId) {
+        if (!currentStudentId) return;
+        const spinner = document.getElementById(`deploySpinner_${templateId}`);
+        const btn = document.getElementById(`btnDeploy_${templateId}`);
+
+        if (spinner) spinner.style.display = "inline-block";
+        if (btn) btn.disabled = true;
         hideAlert();
+        showAlert("Cloning lab virtual machine from template... This takes ~10–20 seconds.", "info");
 
         try {
-            const res = await fetch(`/api/${COURSE_ID}/start/${currentVmid}`, { method: "POST" });
+            const res = await fetch(`/api/${COURSE_ID}/provision`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    student_id: currentStudentId,
+                    template_id: templateId
+                })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showAlert(`Success! ${data.message} Initializing VM...`, "success");
+                await loadStudentLabs();
+            } else {
+                showAlert(data.error || "Failed to provision VM.", "error");
+            }
+        } catch (err) {
+            showAlert("Provisioning request failed: " + err.message, "error");
+        } finally {
+            if (spinner) spinner.style.display = "none";
+            if (btn) btn.disabled = false;
+        }
+    }
+
+    async function startVm(vmid) {
+        hideAlert();
+        showAlert(`Powering on VM ${vmid}...`, "info");
+        try {
+            const res = await fetch(`/api/${COURSE_ID}/start/${vmid}`, { method: "POST" });
             const data = await res.json();
             if (res.ok) {
-                showAlert("Start command sent! Initializing VM, please wait...", "info");
-                // Poll every 3 seconds for 15 seconds
-                let attempts = 0;
-                if (statusPollingTimer) clearInterval(statusPollingTimer);
-                statusPollingTimer = setInterval(async () => {
-                    attempts++;
-                    await checkStatus();
-                    if (attempts > 5) clearInterval(statusPollingTimer);
-                }, 3000);
+                showAlert("Start command issued. Waiting for VM boot & DHCP IP...", "info");
+                setTimeout(loadStudentLabs, 4000);
             } else {
                 showAlert(data.error || "Failed to start VM.", "error");
             }
         } catch (err) {
             showAlert("Error starting VM: " + err.message, "error");
-        } finally {
-            document.getElementById("startSpinner").style.display = "none";
         }
     }
 
-    async function restartVm() {
-        if (!currentVmid) return;
-        if (!confirm("Are you sure you want to reboot your VM? Unsaved work will be lost.")) return;
-
-        document.getElementById("restartSpinner").style.display = "inline-block";
-        document.getElementById("btnRestartVm").disabled = true;
+    async function restartVm(vmid) {
+        if (!confirm(`Are you sure you want to restart VM ${vmid}?`)) return;
         hideAlert();
-
         try {
-            const res = await fetch(`/api/${COURSE_ID}/restart/${currentVmid}`, { method: "POST" });
+            const res = await fetch(`/api/${COURSE_ID}/restart/${vmid}`, { method: "POST" });
             const data = await res.json();
             if (res.ok) {
                 showAlert("Reboot command sent to VM.", "info");
-                setTimeout(checkStatus, 4000);
+                setTimeout(loadStudentLabs, 4000);
             } else {
                 showAlert(data.error || "Failed to restart VM.", "error");
             }
         } catch (err) {
-            showAlert("Error restarting VM: " + err.message, "error");
-        } finally {
-            document.getElementById("restartSpinner").style.display = "none";
-            document.getElementById("btnRestartVm").disabled = false;
+            showAlert("Error rebooting VM: " + err.message, "error");
         }
     }
 
-    function downloadVv() {
-        if (!currentVmid) return;
-        window.location.href = `/api/${COURSE_ID}/vv/${currentVmid}`;
+    function downloadVv(vmid) {
+        window.location.href = `/api/${COURSE_ID}/vv/${vmid}`;
     }
 
-    function downloadRdp() {
-        if (!currentVmid) return;
-        window.location.href = `/api/${COURSE_ID}/rdp/${currentVmid}`;
+    function downloadRdp(vmid) {
+        window.location.href = `/api/${COURSE_ID}/rdp/${vmid}`;
     }
 </script>
 {% endblock %}

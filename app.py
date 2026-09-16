@@ -5,24 +5,25 @@ import traceback
 from pathlib import Path
 from flask import Flask, Response, jsonify, render_template, request, abort
 
+from models import db, Course, LabTemplate, User, StudentVM
+from db_init import seed_database, sync_existing_vms_from_proxmox
+from provisioner import provision_student_vm
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 
-# Load courses configuration
-CONFIG_PATH = Path(__file__).parent / "config" / "courses.json"
+# Configure SQLite Database
+DB_PATH = Path(__file__).parent / "data" / "portal.db"
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{DB_PATH.resolve()}"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
-def load_courses():
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data.get("courses", {})
-    except Exception as e:
-        logger.error(f"Error loading courses configuration: {e}")
-        return {}
+db.init_app(app)
 
-COURSES = load_courses()
+# Initialize and seed database on startup
+seed_database(app)
 
 def get_proxmox_client():
     """Initializes and returns a ProxmoxAPI client using environment variables."""
@@ -52,17 +53,17 @@ def find_vm_by_id_or_name(proxmox, student_or_vmid, course=None):
     """
     vmid_str = str(student_or_vmid).strip()
     all_resources = proxmox.cluster.resources.get(type="vm")
-    
+
     # 1. Direct VM ID match
     for vm in all_resources:
         if str(vm.get("vmid")) == vmid_str and vm.get("type") == "qemu":
             return vm.get("node"), str(vm.get("vmid")), vm
 
-    # 2. Match VM name ending or containing the student ID
+    # 2. Match VM name containing the student ID and course code
     for vm in all_resources:
         name = str(vm.get("name", ""))
         if vmid_str in name and vm.get("type") == "qemu":
-            if course and course.get("code") and course.get("code").lower() in name.lower():
+            if course and course.code.lower() in name.lower():
                 return vm.get("node"), str(vm.get("vmid")), vm
             elif not course:
                 return vm.get("node"), str(vm.get("vmid")), vm
@@ -91,6 +92,14 @@ def get_vm_ip(proxmox, node, vmid):
         pass
     return None
 
+# Sync existing cluster VMs into DB if Proxmox is reachable
+try:
+    _p = get_proxmox_client()
+    if _p:
+        sync_existing_vms_from_proxmox(app, _p)
+except Exception as e:
+    logger.warning(f"Could not perform initial Proxmox VM sync: {e}")
+
 # ==========================================
 # Frontend Routes
 # ==========================================
@@ -98,14 +107,14 @@ def get_vm_ip(proxmox, node, vmid):
 @app.route("/")
 def index():
     """Renders the course selector page."""
-    courses = load_courses()
-    return render_template("index.html", courses=courses)
+    courses = Course.query.all()
+    courses_dict = {c.id: c.to_dict() for c in courses}
+    return render_template("index.html", courses=courses_dict)
 
 @app.route("/<course_id>")
 def course_portal(course_id):
     """Renders the course-specific student portal."""
-    courses = load_courses()
-    course = courses.get(course_id.lower())
+    course = db.session.get(Course, course_id.lower())
     if not course:
         abort(404)
     return render_template("course.html", course=course)
@@ -114,11 +123,120 @@ def course_portal(course_id):
 # API Endpoints
 # ==========================================
 
+@app.route("/api/<course_id>/templates", methods=["GET"])
+def api_list_templates(course_id):
+    """Returns published lab templates for a course."""
+    course = db.session.get(Course, course_id.lower())
+    if not course:
+        return jsonify({"error": "Course not found"}), 404
+
+    templates = [t.to_dict() for t in course.templates if t.is_published]
+    return jsonify({"course": course.code, "templates": templates})
+
+@app.route("/api/<course_id>/student/<student_id>/vms", methods=["GET"])
+def api_student_vms(course_id, student_id):
+    """Returns all VMs belonging to a specific student for a course."""
+    course = db.session.get(Course, course_id.lower())
+    if not course:
+        return jsonify({"error": "Course not found"}), 404
+
+    clean_id = student_id.strip()
+    vms = StudentVM.query.filter_by(course_id=course.id, user_id=clean_id).all()
+    
+    # Also check if student has any VM discovered by ID matching
+    result = []
+    proxmox = get_proxmox_client()
+
+    for vm in vms:
+        vm_data = vm.to_dict()
+        if proxmox:
+            try:
+                curr = proxmox.nodes(vm.node).qemu(vm.vmid).status.current.get()
+                vm_data["status"] = curr.get("status", "stopped")
+                if vm_data["status"] == "running":
+                    ip = get_vm_ip(proxmox, vm.node, vm.vmid)
+                    if ip:
+                        vm_data["ip"] = ip
+                        vm.last_ip = ip
+                        db.session.commit()
+            except Exception:
+                pass
+        result.append(vm_data)
+
+    return jsonify({
+        "student_id": clean_id,
+        "course": course.code,
+        "vms": result
+    })
+
+@app.route("/api/<course_id>/provision", methods=["POST"])
+def api_provision_vm(course_id):
+    """
+    Self-service endpoint: Provisions a new VM for a student from a published template.
+    JSON payload: { "student_id": "W0123456", "template_id": 1, "student_name": "Jane Doe" }
+    """
+    course = db.session.get(Course, course_id.lower())
+    if not course:
+        return jsonify({"success": False, "error": "Course not found"}), 404
+
+    data = request.get_json() or {}
+    student_id = str(data.get("student_id", "")).strip()
+    template_id = data.get("template_id")
+    student_name = data.get("student_name", student_id)
+
+    if not student_id or not template_id:
+        return jsonify({"success": False, "error": "student_id and template_id are required"}), 400
+
+    template = LabTemplate.query.get(template_id)
+    if not template or not template.is_published or template.course_id != course.id:
+        return jsonify({"success": False, "error": "Invalid or unpublished template selected"}), 400
+
+    # Ensure user exists in DB
+    user = User.query.get(student_id)
+    if not user:
+        user = User(id=student_id, name=student_name, role="student")
+        db.session.add(user)
+        db.session.commit()
+
+    # Check if student already has a VM from this template (prevent accidental duplicates)
+    existing = StudentVM.query.filter_by(
+        user_id=student_id,
+        course_id=course.id,
+        template_id=template.id
+    ).first()
+
+    if existing:
+        return jsonify({
+            "success": False,
+            "error": f"You already have a provisioned VM for {template.name} (VM ID {existing.vmid})."
+        }), 409
+
+    proxmox = get_proxmox_client()
+    if not proxmox:
+        return jsonify({"success": False, "error": "Proxmox cluster connection is unavailable."}), 503
+
+    try:
+        new_vm = provision_student_vm(
+            proxmox=proxmox,
+            course=course,
+            template=template,
+            user=user,
+            auto_start=True,
+            full_clone=False
+        )
+        return jsonify({
+            "success": True,
+            "message": f"Successfully provisioned {new_vm.name} (VM ID {new_vm.vmid})!",
+            "vm": new_vm.to_dict()
+        }), 201
+    except Exception as e:
+        logger.error(f"Error provisioning VM for student {student_id}: {e}\n{traceback.format_exc()}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 @app.route("/api/<course_id>/status/<vmid>", methods=["GET"])
 def api_vm_status(course_id, vmid):
     """Returns real-time VM power state, host node, and IP."""
-    courses = load_courses()
-    course = courses.get(course_id.lower())
+    course = db.session.get(Course, course_id.lower())
 
     proxmox = get_proxmox_client()
     if not proxmox:
@@ -149,8 +267,7 @@ def api_vm_status(course_id, vmid):
 @app.route("/api/<course_id>/start/<vmid>", methods=["POST"])
 def api_start_vm(course_id, vmid):
     """Starts a student VM."""
-    courses = load_courses()
-    course = courses.get(course_id.lower())
+    course = db.session.get(Course, course_id.lower())
 
     proxmox = get_proxmox_client()
     if not proxmox:
@@ -174,8 +291,7 @@ def api_start_vm(course_id, vmid):
 @app.route("/api/<course_id>/restart/<vmid>", methods=["POST"])
 def api_restart_vm(course_id, vmid):
     """Reboots or resets a student VM."""
-    courses = load_courses()
-    course = courses.get(course_id.lower())
+    course = db.session.get(Course, course_id.lower())
 
     proxmox = get_proxmox_client()
     if not proxmox:
@@ -195,8 +311,7 @@ def api_restart_vm(course_id, vmid):
 @app.route("/api/<course_id>/vv/<vmid>", methods=["GET"])
 def api_download_vv(course_id, vmid):
     """Generates and downloads Virt-Viewer (.vv) file for SPICE console."""
-    courses = load_courses()
-    course = courses.get(course_id.lower())
+    course = db.session.get(Course, course_id.lower())
 
     proxmox = get_proxmox_client()
     if not proxmox:
@@ -234,10 +349,7 @@ host-subject={api_response.get("host-subject")}
 @app.route("/api/<course_id>/rdp/<vmid>", methods=["GET"])
 def api_download_rdp(course_id, vmid):
     """Generates and downloads Windows Remote Desktop Connection (.rdp) file."""
-    courses = load_courses()
-    course = courses.get(course_id.lower())
-    if not course or not course.get("supports_rdp"):
-        abort(400, description="RDP is not enabled for this course.")
+    course = Course.query.get(course_id.lower())
 
     proxmox = get_proxmox_client()
     if not proxmox:
@@ -252,7 +364,7 @@ def api_download_rdp(course_id, vmid):
         if not ip:
             abort(400, description="VM IP address not yet acquired via guest agent. Please ensure the VM is powered on.")
 
-        default_user = course.get("default_username", ".\\Student")
+        default_user = course.default_username if course else ".\\Student"
         rdp_content = f"""full address:s:{ip}
 prompt for credentials:i:1
 administrative session:i:1

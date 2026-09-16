@@ -6,8 +6,10 @@ __pycache__/
 .Python
 env/
 venv/
-.venv/
 ENV/
+*.db
+*.sqlite3
+data/
 
 # Environment and Secrets
 .env

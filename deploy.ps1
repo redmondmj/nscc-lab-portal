@@ -7,10 +7,10 @@ $RemoteDir = "~/proxmox-getvm-app"
 Write-Host "Syncing files to ${RemoteHost}:${RemoteDir}..." -ForegroundColor Cyan
 
 # Ensure target directory exists on remote host
-ssh $RemoteHost "mkdir -p $RemoteDir/config $RemoteDir/templates $RemoteDir/static"
+ssh $RemoteHost "mkdir -p $RemoteDir/config $RemoteDir/templates $RemoteDir/static $RemoteDir/data"
 
 # Copy project files
-scp app.py Dockerfile requirements.txt docker-compose.yml "${RemoteHost}:${RemoteDir}/"
+scp app.py models.py db_init.py provisioner.py Dockerfile requirements.txt docker-compose.yml "${RemoteHost}:${RemoteDir}/"
 scp config/courses.json "${RemoteHost}:${RemoteDir}/config/"
 scp templates/base.html templates/index.html templates/course.html "${RemoteHost}:${RemoteDir}/templates/"
 scp static/logo.png "${RemoteHost}:${RemoteDir}/static/"
