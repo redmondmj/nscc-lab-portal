@@ -27,6 +27,10 @@ if env_file.exists():
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = os.environ.get("SECRET_KEY", "nscc-lab-portal-secret-key-39281")
 
+# Support reverse proxy headers (Nginx Proxy Manager / SSL termination)
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
 # Configure SQLite Database
 DB_PATH = Path(__file__).parent / "data" / "portal.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
