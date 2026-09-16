@@ -13,6 +13,7 @@
       "supports_rdp": true,
       "supports_spice": true,
       "default_username": ".\\Student",
+      "default_password": "It$tudents",
       "notes": [
         "Your VM ID is your NSCC Student ID without the leading 'W0' (e.g., W01234567 becomes 1234567).",
         "Recommended: Download the .rdp connection file once the VM is running and has acquired an IP address.",

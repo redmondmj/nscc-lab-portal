@@ -532,13 +532,46 @@ def console_view(course_id, vmid):
     if not target_ip:
         abort(400, description=f"VM {vmid} has not acquired an IP address yet. Please ensure the VM is running and guest agent is active.")
 
+    cfg_file = Path(app.root_path) / "config" / "courses.json"
+    cfg = {}
+    if cfg_file.exists():
+        try:
+            with open(cfg_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                cfg = data.get("courses", {}).get(course.id.lower(), {})
+        except Exception:
+            pass
+
+    username = (
+        request.args.get("user")
+        or (vm_record.template.default_username if (vm_record and vm_record.template and vm_record.template.default_username) else None)
+        or cfg.get("default_username")
+        or course.default_username
+        or ".\\Student"
+    )
+    password = (
+        request.args.get("pass")
+        or cfg.get("default_password")
+        or os.environ.get(f"{course.id.upper()}_VM_PASSWORD")
+        or os.environ.get("DEFAULT_VM_PASSWORD")
+    )
+
+    domain = None
+    if "\\" in username:
+        domain, username = username.split("\\", 1)
+
     rdp_settings = {
         "hostname": target_ip,
         "port": "3389",
         "security": "any",
         "ignore-cert": "true",
-        "resize-method": "display-update"
+        "resize-method": "display-update",
+        "username": username
     }
+    if domain:
+        rdp_settings["domain"] = domain
+    if password:
+        rdp_settings["password"] = password
 
     conn_settings = {
         "connection": {
