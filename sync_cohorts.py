@@ -6,7 +6,7 @@ import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
-from models import db, User, StudentVM, Course, LabTemplate
+from models import db, User, StudentVM, Course, LabTemplate, Enrollment
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +75,11 @@ def sync_entra_cohorts(app=None, groups=None):
                     user.email = upn
                     user.cohort = group
                     results["synced_count"] += 1
+                # Auto-enroll in cohort default course
+                target_course_id = "osys1200" if "Y1" in group else ("netw2710" if "Y2" in group else None)
+                if target_course_id:
+                    if not Enrollment.query.filter_by(user_id=username, course_id=target_course_id).first():
+                        db.session.add(Enrollment(user_id=username, course_id=target_course_id))
 
         db.session.commit()
         logger.info(f"Cohort sync complete: {results['synced_count']} student records updated.")

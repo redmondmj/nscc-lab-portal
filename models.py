@@ -31,7 +31,8 @@ class Course(db.Model):
             "description": self.description,
             "preferred_node": self.preferred_node,
             "default_username": self.default_username,
-            "templates": [t.to_dict() for t in self.templates if t.is_published]
+            "templates": [t.to_dict() for t in self.templates if t.is_published],
+            "enrolled_students_count": len(self.enrollments) if hasattr(self, "enrollments") else 0
         }
 
 class LabTemplate(db.Model):
@@ -91,7 +92,30 @@ class User(db.Model):
             "email": self.email,
             "name": self.name,
             "role": self.role,
-            "cohort": self.cohort
+            "cohort": self.cohort,
+            "enrolled_courses": [e.course_id for e in self.enrollments] if hasattr(self, "enrollments") else []
+        }
+
+class Enrollment(db.Model):
+    __tablename__ = "enrollments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.String(64), db.ForeignKey("users.id"), nullable=False)
+    course_id = db.Column(db.String(32), db.ForeignKey("courses.id"), nullable=False)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (db.UniqueConstraint("user_id", "course_id", name="uq_user_course"),)
+
+    user = db.relationship("User", backref=db.backref("enrollments", lazy=True, cascade="all, delete-orphan"))
+    course = db.relationship("Course", backref=db.backref("enrollments", lazy=True, cascade="all, delete-orphan"))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "course_id": self.course_id,
+            "course_code": self.course.code if self.course else self.course_id.upper(),
+            "course_name": self.course.name if self.course else self.course_id
         }
 
 class StudentVM(db.Model):

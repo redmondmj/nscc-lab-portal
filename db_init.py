@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from pathlib import Path
-from models import db, Course, LabTemplate, User, StudentVM
+from models import db, Course, LabTemplate, User, StudentVM, Enrollment
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +83,20 @@ def seed_database(app):
                     elif not existing_tmpl.default_password and cdata.get("default_password"):
                         existing_tmpl.default_password = cdata.get("default_password")
 
+            # Seed default course enrollments based on student cohort and active VMs
+            for user in User.query.all():
+                if user.cohort:
+                    target_course_id = "osys1200" if "Y1" in user.cohort else ("netw2710" if "Y2" in user.cohort else None)
+                    if target_course_id:
+                        if not Enrollment.query.filter_by(user_id=user.id, course_id=target_course_id).first():
+                            db.session.add(Enrollment(user_id=user.id, course_id=target_course_id))
+
+            for vm in StudentVM.query.all():
+                if not Enrollment.query.filter_by(user_id=vm.user_id, course_id=vm.course_id).first():
+                    db.session.add(Enrollment(user_id=vm.user_id, course_id=vm.course_id))
+
             db.session.commit()
-            logger.info("Database initialized and seeded successfully.")
+            logger.info("Database initialized and seeded successfully with enrollments.")
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error seeding database: {e}")
@@ -156,6 +168,9 @@ def sync_existing_vms_from_proxmox(app, proxmox):
                                 status=vm.get("status", "stopped")
                             )
                             db.session.add(record)
+
+                            if not Enrollment.query.filter_by(user_id=user.id, course_id=matched_course.id).first():
+                                db.session.add(Enrollment(user_id=user.id, course_id=matched_course.id))
 
             db.session.commit()
             logger.info("Successfully synchronized existing cluster VMs with database.")

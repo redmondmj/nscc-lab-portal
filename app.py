@@ -6,7 +6,7 @@ from pathlib import Path
 from functools import wraps
 from flask import Flask, Response, jsonify, render_template, request, abort, session, redirect, url_for
 
-from models import db, Course, LabTemplate, User, StudentVM
+from models import db, Course, LabTemplate, User, StudentVM, Enrollment
 from db_init import seed_database, sync_existing_vms_from_proxmox
 from provisioner import provision_student_vm
 from auth import initiate_auth_flow, acquire_token_by_flow, extract_user_from_claims
@@ -877,6 +877,89 @@ def api_admin_cohorts_sync():
     except Exception as e:
         logger.error(f"Error during cohort sync: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/admin/enroll", methods=["POST"])
+@admin_required
+def api_admin_enroll():
+    """
+    Enrolls a student (or entire cohort) into a course.
+    Payload: { "course_id": "osys1200", "user_id": "..." } or { "course_id": "osys1200", "cohort": "..." }
+    """
+    data = request.get_json() or {}
+    course_id = (data.get("course_id") or "").lower()
+    user_id = data.get("user_id")
+    cohort = data.get("cohort")
+
+    course = db.session.get(Course, course_id)
+    if not course:
+        return jsonify({"success": False, "error": f"Course '{course_id}' not found."}), 404
+
+    target_users = []
+    if user_id:
+        u = db.session.get(User, user_id.lower())
+        if not u:
+            return jsonify({"success": False, "error": f"User '{user_id}' not found."}), 404
+        target_users.append(u)
+    elif cohort:
+        target_users = User.query.filter_by(cohort=cohort).all()
+        if not target_users:
+            return jsonify({"success": False, "error": f"No students found in cohort '{cohort}'."}), 404
+    else:
+        return jsonify({"success": False, "error": "user_id or cohort is required."}), 400
+
+    enrolled_count = 0
+    for u in target_users:
+        if not Enrollment.query.filter_by(user_id=u.id, course_id=course.id).first():
+            db.session.add(Enrollment(user_id=u.id, course_id=course.id))
+            enrolled_count += 1
+
+    db.session.commit()
+    return jsonify({
+        "success": True,
+        "enrolled_count": enrolled_count,
+        "course_code": course.code,
+        "course_name": course.name
+    })
+
+@app.route("/api/admin/unenroll", methods=["POST", "DELETE"])
+@admin_required
+def api_admin_unenroll():
+    """
+    Removes a student (or entire cohort) from a course.
+    Payload: { "course_id": "osys1200", "user_id": "..." } or { "course_id": "osys1200", "cohort": "..." }
+    """
+    data = request.get_json() or {}
+    course_id = (data.get("course_id") or "").lower()
+    user_id = data.get("user_id")
+    cohort = data.get("cohort")
+
+    course = db.session.get(Course, course_id)
+    if not course:
+        return jsonify({"success": False, "error": f"Course '{course_id}' not found."}), 404
+
+    removed_count = 0
+    if user_id:
+        enr = Enrollment.query.filter_by(user_id=user_id.lower(), course_id=course.id).first()
+        if enr:
+            db.session.delete(enr)
+            removed_count = 1
+    elif cohort:
+        cohort_users = User.query.filter_by(cohort=cohort).all()
+        user_ids = [u.id for u in cohort_users]
+        if user_ids:
+            enrs = Enrollment.query.filter(Enrollment.course_id == course.id, Enrollment.user_id.in_(user_ids)).all()
+            for enr in enrs:
+                db.session.delete(enr)
+                removed_count += 1
+    else:
+        return jsonify({"success": False, "error": "user_id or cohort is required."}), 400
+
+    db.session.commit()
+    return jsonify({
+        "success": True,
+        "removed_count": removed_count,
+        "course_code": course.code
+    })
 
 # ==========================================
 # Microsoft Entra ID Authentication Endpoints

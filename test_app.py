@@ -335,5 +335,48 @@ class TestProxmoxApp(unittest.TestCase):
         self.assertIn("cohorts", data)
         self.assertIn("total", data)
 
+    def test_admin_enroll_and_unenroll(self):
+        """Test enrolling and removing a student from a course."""
+        from models import User, Enrollment
+        with app.app_context():
+            u = User.query.get("test.enrollee")
+            if not u:
+                u = User(id="test.enrollee", name="Enrollee", email="test.enrollee@nscctruro.ca")
+                db.session.add(u)
+                db.session.commit()
+
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "W0999999", "name": "Prof. Smith", "role": "instructor"}
+
+        # 1. Enroll student
+        res = self.client.post("/api/admin/enroll", json={
+            "user_id": "test.enrollee",
+            "course_id": "osys1200"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["enrolled_count"], 1)
+
+        # 2. Verify enrolled in User.to_dict()
+        with app.app_context():
+            u = db.session.get(User, "test.enrollee")
+            self.assertIn("osys1200", u.to_dict()["enrolled_courses"])
+
+        # 3. Unenroll student
+        res = self.client.post("/api/admin/unenroll", json={
+            "user_id": "test.enrollee",
+            "course_id": "osys1200"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["removed_count"], 1)
+
+        # 4. Verify removed
+        with app.app_context():
+            u = db.session.get(User, "test.enrollee")
+            self.assertNotIn("osys1200", u.to_dict()["enrolled_courses"])
+
 if __name__ == "__main__":
     unittest.main()
