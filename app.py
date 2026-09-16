@@ -134,7 +134,7 @@ def api_vm_status(course_id, vmid):
         ip = get_vm_ip(proxmox, node, real_vmid) if state == "running" else None
 
         return jsonify({
-            "found": true if node else false,
+            "found": True if node else False,
             "vmid": real_vmid,
             "name": vm_res.get("name", f"VM {real_vmid}"),
             "node": node,
