@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ vm.name }} - Remote Desktop Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #0b1120;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            color: #f8fafc;
+        }
+
+        /* Top control bar */
+        #toolbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 44px;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(8px);
+            border-bottom: 1px solid #334155;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1rem;
+            z-index: 100;
+            transition: transform 0.25s ease;
+        }
+        #toolbar.hidden {
+            transform: translateY(-100%);
+        }
+
+        .bar-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+        .vm-badge {
+            background: rgba(59, 130, 246, 0.2);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.4);
+            padding: 0.2rem 0.6rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-family: monospace;
+        }
+
+        .bar-actions {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-ctrl {
+            background: #1e293b;
+            color: #e2e8f0;
+            border: 1px solid #475569;
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            transition: all 0.15s;
+        }
+        .btn-ctrl:hover {
+            background: #334155;
+            color: #fff;
+            border-color: #64748b;
+        }
+        .btn-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            border-color: rgba(239, 68, 68, 0.4);
+        }
+        .btn-danger:hover {
+            background: rgba(239, 68, 68, 0.35);
+            color: #fff;
+        }
+
+        /* Toggle tab to show toolbar when hidden */
+        #toolbarToggle {
+            position: fixed;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #334155;
+            border-top: none;
+            padding: 0.2rem 0.8rem;
+            border-radius: 0 0 8px 8px;
+            font-size: 0.7rem;
+            color: #94a3b8;
+            cursor: pointer;
+            z-index: 101;
+            display: none;
+        }
+
+        /* Desktop viewport canvas container */
+        #viewport {
+            position: absolute;
+            top: 44px;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+        #viewport.fullscreen {
+            top: 0;
+        }
+
+        /* Status Overlay (connecting / disconnected) */
+        #statusOverlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(11, 17, 32, 0.88);
+            backdrop-filter: blur(6px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+        .spinner {
+            width: 38px;
+            height: 38px;
+            border: 3px solid rgba(59, 130, 246, 0.2);
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-bottom: 1.25rem;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Clipboard Modal */
+        #clipboardModal {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 12px;
+            padding: 1.5rem;
+            width: 420px;
+            max-width: 90%;
+            z-index: 200;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7);
+        }
+    </style>
+</head>
+<body>
+    <!-- Top Control Bar -->
+    <div id="toolbar">
+        <div class="bar-brand">
+            <span style="font-weight: 700; color: #38bdf8;">NSCC Lab Console</span>
+            <span class="vm-badge">{{ vm.name }} (VMID: {{ vm.vmid }})</span>
+            <span id="connStatus" style="font-size: 0.75rem; color: #94a3b8;">Connecting...</span>
+        </div>
+
+        <div class="bar-actions">
+            <button class="btn-ctrl" onclick="sendCtrlAltDel()" title="Send Ctrl+Alt+Del to unlock Windows">
+                <span>&#9000; Ctrl+Alt+Del</span>
+            </button>
+            <button class="btn-ctrl" onclick="toggleClipboardModal()" title="Shared Clipboard">
+                <span>&#128203; Clipboard</span>
+            </button>
+            <button class="btn-ctrl" onclick="toggleFullscreen()" title="Toggle Fullscreen">
+                <span id="fsIcon">&#9974; Fullscreen</span>
+            </button>
+            <button class="btn-ctrl btn-danger" onclick="disconnectAndClose()">
+                <span>&times; Close Console</span>
+            </button>
+        </div>
+    </div>
+
+    <div id="toolbarToggle" onclick="toggleToolbar()">&#9660; Show Toolbar</div>
+
+    <!-- Main Desktop Container -->
+    <div id="viewport">
+        <div id="display"></div>
+    </div>
+
+    <!-- Status Banner Overlay -->
+    <div id="statusOverlay">
+        <div class="spinner" id="statusSpinner"></div>
+        <h2 id="statusTitle" style="font-size: 1.3rem; margin-bottom: 0.5rem;">Connecting to Windows VM...</h2>
+        <p id="statusDesc" style="color: #94a3b8; font-size: 0.9rem; max-width: 480px; text-align: center;">
+            Establishing secure RDP tunnel to {{ vm.name }} ({{ vm.last_ip or 'Proxmox Guest' }}).
+        </p>
+        <button id="btnRetry" class="btn-ctrl" style="margin-top: 1.25rem; display: none;" onclick="window.location.reload()">
+            &#8635; Retry Connection
+        </button>
+    </div>
+
+    <!-- Shared Clipboard Modal -->
+    <div id="clipboardModal">
+        <h3 style="font-size: 1.1rem; margin-bottom: 0.75rem;">Remote Clipboard</h3>
+        <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.75rem;">
+            Paste text below to send it to your Windows virtual machine:
+        </p>
+        <textarea id="clipboardText" style="width: 100%; height: 120px; background: #0f172a; border: 1px solid #475569; border-radius: 8px; color: #fff; padding: 0.75rem; font-family: monospace; font-size: 0.85rem;"></textarea>
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+            <button class="btn-ctrl" onclick="toggleClipboardModal()">Cancel</button>
+            <button class="btn-ctrl" style="background: #2563eb; color: white;" onclick="sendClipboard()">Send to VM</button>
+        </div>
+    </div>
+
+    <!-- Guacamole Client Library -->
+    <script src="{{ url_for('static', filename='guacamole-common.min.js') }}"></script>
+
+    <script>
+        const TOKEN = "{{ token }}";
+        const VMID = "{{ vm.vmid }}";
+        let client = null;
+        let mouse = null;
+        let keyboard = null;
+        let isFullscreen = false;
+
+        function updateStatus(title, desc, isError = false) {
+            document.getElementById("statusTitle").innerText = title;
+            document.getElementById("statusDesc").innerText = desc;
+            document.getElementById("connStatus").innerText = title;
+            if (isError) {
+                document.getElementById("statusSpinner").style.display = "none";
+                document.getElementById("btnRetry").style.display = "inline-flex";
+            }
+        }
+
+        function hideStatus() {
+            document.getElementById("statusOverlay").style.display = "none";
+            document.getElementById("connStatus").innerText = "Connected";
+            document.getElementById("connStatus").style.color = "#34d399";
+        }
+
+        function initConnection() {
+            const wsProtocol = (window.location.protocol === "https:") ? "wss:" : "ws:";
+            // Behind NPM: wss://labs.nscctruro.ca/guacws?token=...
+            const wsUrl = `${wsProtocol}//${window.location.host}/guacws?token=${encodeURIComponent(TOKEN)}&width=${window.innerWidth}&height=${window.innerHeight - 44}&dpi=96`;
+
+            console.log("Connecting to Guacamole tunnel:", wsUrl);
+            const tunnel = new Guacamole.WebSocketTunnel(wsUrl);
+            client = new Guacamole.Client(tunnel);
+
+            const displayEl = document.getElementById("display");
+            const guacDisplay = client.getDisplay().getElement();
+            displayEl.appendChild(guacDisplay);
+
+            // Mouse handling
+            mouse = new Guacamole.Mouse(guacDisplay);
+            mouse.onmousedown = mouse.onmouseup = mouse.onmousemove = function(mouseState) {
+                client.sendMouseState(mouseState);
+            };
+
+            // Keyboard handling
+            keyboard = new Guacamole.Keyboard(document);
+            keyboard.onkeydown = function(keysym) {
+                client.sendKeyEvent(1, keysym);
+            };
+            keyboard.onkeyup = function(keysym) {
+                client.sendKeyEvent(0, keysym);
+            };
+
+            // State changes
+            client.onstatechange = function(state) {
+                console.log("Guacamole client state changed:", state);
+                // 0: IDLE, 1: CONNECTING, 2: WAITING, 3: CONNECTED, 4: DISCONNECTING, 5: DISCONNECTED
+                if (state === 3) {
+                    hideStatus();
+                } else if (state === 5) {
+                    updateStatus("Disconnected", "Session terminated. You can close this tab or reconnect.", true);
+                }
+            };
+
+            client.onerror = function(status) {
+                console.error("Guacamole client error:", status);
+                updateStatus("Connection Error", `Error code ${status.code}. The VM may still be booting or RDP service starting.`, true);
+            };
+
+            // Connect
+            client.connect();
+        }
+
+        // Send Ctrl+Alt+Del sequence
+        function sendCtrlAltDel() {
+            if (!client) return;
+            const KEY_CTRL_L = 0xFFE3;
+            const KEY_ALT_L  = 0xFFE9;
+            const KEY_DELETE = 0xFFFF;
+
+            client.sendKeyEvent(1, KEY_CTRL_L);
+            client.sendKeyEvent(1, KEY_ALT_L);
+            client.sendKeyEvent(1, KEY_DELETE);
+
+            client.sendKeyEvent(0, KEY_DELETE);
+            client.sendKeyEvent(0, KEY_ALT_L);
+            client.sendKeyEvent(0, KEY_CTRL_L);
+
+            console.log("Sent Ctrl+Alt+Del");
+        }
+
+        // Fullscreen toggle
+        function toggleFullscreen() {
+            const doc = window.document;
+            const docEl = doc.documentElement;
+
+            if (!isFullscreen) {
+                const req = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen;
+                if (req) req.call(docEl);
+                document.getElementById("toolbar").classList.add("hidden");
+                document.getElementById("viewport").classList.add("fullscreen");
+                document.getElementById("toolbarToggle").style.display = "block";
+                document.getElementById("fsIcon").innerText = "Exit Fullscreen";
+                isFullscreen = true;
+            } else {
+                const cancel = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen;
+                if (cancel) cancel.call(doc);
+                document.getElementById("toolbar").classList.remove("hidden");
+                document.getElementById("viewport").classList.remove("fullscreen");
+                document.getElementById("toolbarToggle").style.display = "none";
+                document.getElementById("fsIcon").innerText = "Fullscreen";
+                isFullscreen = false;
+            }
+        }
+
+        function toggleToolbar() {
+            const tb = document.getElementById("toolbar");
+            tb.classList.toggle("hidden");
+        }
+
+        // Shared Clipboard Modal
+        function toggleClipboardModal() {
+            const modal = document.getElementById("clipboardModal");
+            modal.style.display = (modal.style.display === "block") ? "none" : "block";
+            if (modal.style.display === "block") {
+                document.getElementById("clipboardText").focus();
+            }
+        }
+
+        function sendClipboard() {
+            const text = document.getElementById("clipboardText").value;
+            if (client && text) {
+                const stream = client.createClipboardStream("text/plain");
+                const writer = new Guacamole.StringWriter(stream);
+                writer.sendText(text);
+                writer.sendEnd();
+                toggleClipboardModal();
+                console.log("Clipboard text sent to VM");
+            }
+        }
+
+        function disconnectAndClose() {
+            if (client) {
+                client.disconnect();
+            }
+            window.close();
+            // Fallback if window.close is blocked
+            window.location.href = "/";
+        }
+
+        // Auto-resize display on window resize
+        window.addEventListener("resize", function() {
+            if (!client) return;
+            const width = window.innerWidth;
+            const height = isFullscreen ? window.innerHeight : (window.innerHeight - 44);
+            client.sendSize(width, height);
+        });
+
+        // Initialize on load
+        window.addEventListener("DOMContentLoaded", initConnection);
+    </script>
+</body>
+</html>

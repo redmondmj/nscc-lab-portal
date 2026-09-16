@@ -458,6 +458,112 @@ gatewayusagemethod:i:0
         abort(500, description=str(e))
 
 # ==========================================
+# In-Browser HTML5 Remote Desktop (Guacamole)
+# ==========================================
+
+def generate_guacamole_token(connection_settings, secret_key):
+    """
+    Encrypts connection settings for guacamole-lite using AES-256-CBC with PKCS7 padding.
+    Token format: base64(json({ "iv": base64(iv), "value": base64(ciphertext) }))
+    """
+    import base64
+    from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+    from cryptography.hazmat.primitives import padding
+
+    raw_key = os.environ.get("GUAC_KEY") or secret_key or "nscc-lab-portal-secret-key-39281"
+    key_bytes = raw_key[:32].ljust(32, "0").encode("utf-8")
+    iv = os.urandom(16)
+
+    padder = padding.PKCS7(128).padder()
+    json_bytes = json.dumps(connection_settings).encode("utf-8")
+    padded_data = padder.update(json_bytes) + padder.finalize()
+
+    cipher = Cipher(algorithms.AES(key_bytes), modes.CBC(iv))
+    encryptor = cipher.encryptor()
+    encrypted = encryptor.update(padded_data) + encryptor.finalize()
+
+    payload = {
+        "iv": base64.b64encode(iv).decode("utf-8"),
+        "value": base64.b64encode(encrypted).decode("utf-8")
+    }
+    return base64.b64encode(json.dumps(payload).encode("utf-8")).decode("utf-8")
+
+@app.route("/<course_id>/console/<int:vmid>")
+def console_view(course_id, vmid):
+    """
+    Renders the in-browser HTML5 remote desktop console for a virtual machine.
+    """
+    course = db.session.get(Course, course_id.lower())
+    if not course:
+        abort(404, description="Course not found.")
+
+    vm_record = StudentVM.query.filter_by(vmid=vmid, course_id=course.id).first()
+    logged_user = session.get("user")
+
+    # RBAC & Student Isolation
+    if os.environ.get("ENTRA_CLIENT_ID"):
+        if not logged_user:
+            return redirect(url_for("login", next=request.url))
+        if logged_user.get("role") not in ["instructor", "admin"]:
+            if not vm_record or vm_record.user_id.upper() != logged_user.get("id", "").upper():
+                abort(403, description="Access denied. You can only view your own lab console.")
+
+    target_ip = vm_record.last_ip if vm_record else None
+    proxmox = get_proxmox_client()
+    node = vm_record.node if vm_record else None
+
+    if proxmox:
+        if not node:
+            node, _, _ = find_vm_by_id_or_name(proxmox, vmid, course)
+        if node:
+            try:
+                curr = proxmox.nodes(node).qemu(vmid).status.current.get()
+                if curr.get("status") != "running":
+                    abort(400, description=f"VM {vmid} is currently stopped. Please start the VM first.")
+                live_ip = get_vm_ip(proxmox, node, vmid)
+                if live_ip:
+                    target_ip = live_ip
+                    if vm_record:
+                        vm_record.last_ip = live_ip
+                        db.session.commit()
+            except Exception as e:
+                logger.warning(f"Error querying live VM status: {e}")
+
+    if not target_ip:
+        abort(400, description=f"VM {vmid} has not acquired an IP address yet. Please ensure the VM is running and guest agent is active.")
+
+    username = vm_record.template.default_username if (vm_record and vm_record.template) else course.default_username or ".\\Student"
+
+    conn_settings = {
+        "connection": {
+            "type": "rdp",
+            "settings": {
+                "hostname": target_ip,
+                "port": "3389",
+                "security": "any",
+                "ignore-cert": "true",
+                "resize-method": "display-update",
+                "username": username
+            }
+        }
+    }
+
+    token = generate_guacamole_token(conn_settings, app.secret_key)
+    vm_data = vm_record.to_dict() if vm_record else {"vmid": vmid, "name": f"VM-{vmid}", "last_ip": target_ip}
+
+    return render_template(
+        "console.html",
+        vm=vm_data,
+        course=course,
+        token=token
+    )
+
+@app.route("/console/<int:vmid>")
+def legacy_console_view(vmid):
+    """Fallback route defaulting to course osys1200."""
+    return console_view("osys1200", vmid)
+
+# ==========================================
 # Instructor Admin Console Endpoints
 # ==========================================
 

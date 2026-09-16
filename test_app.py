@@ -205,5 +205,58 @@ class TestProxmoxApp(unittest.TestCase):
             self.assertEqual(res.status_code, 302)
             self.assertIn("login.microsoftonline.com", res.headers.get("Location", ""))
 
+    def test_guacamole_token_generation(self):
+        """Test AES-256 token encryption for guacamole-lite."""
+        import base64
+        import json
+        from app import generate_guacamole_token
+        from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+        from cryptography.hazmat.primitives import padding
+
+        secret = "test-secret-key-for-guacamole-12"
+        settings = {
+            "connection": {
+                "type": "rdp",
+                "settings": {
+                    "hostname": "10.10.0.211",
+                    "port": "3389"
+                }
+            }
+        }
+
+        token = generate_guacamole_token(settings, secret)
+        self.assertIsInstance(token, str)
+        self.assertGreater(len(token), 50)
+
+        # Decrypt to verify round-trip
+        envelope = json.loads(base64.b64decode(token).decode("utf-8"))
+        self.assertIn("iv", envelope)
+        self.assertIn("value", envelope)
+
+        key_bytes = secret[:32].ljust(32, "0").encode("utf-8")
+        iv = base64.b64decode(envelope["iv"])
+        ciphertext = base64.b64decode(envelope["value"])
+
+        cipher = Cipher(algorithms.AES(key_bytes), modes.CBC(iv))
+        decryptor = cipher.decryptor()
+        padded_plain = decryptor.update(ciphertext) + decryptor.finalize()
+
+        unpadder = padding.PKCS7(128).unpadder()
+        plain = unpadder.update(padded_plain) + unpadder.finalize()
+        decrypted_obj = json.loads(plain.decode("utf-8"))
+
+        self.assertEqual(decrypted_obj["connection"]["type"], "rdp")
+        self.assertEqual(decrypted_obj["connection"]["settings"]["hostname"], "10.10.0.211")
+
+    def test_console_route_isolation(self):
+        """Test RBAC and student isolation on /console/<vmid>."""
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "W0123456", "name": "Student A", "role": "student"}
+
+        # Attempt to access non-existent or peer VM
+        res = self.client.get("/osys1200/console/9999")
+        # Should return 403 or 400
+        self.assertIn(res.status_code, [400, 403, 404])
+
 if __name__ == "__main__":
     unittest.main()

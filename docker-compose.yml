@@ -10,6 +10,26 @@ services:
     volumes:
       - ./data:/app/data
 
+  guacd:
+    image: guacamole/guacd:latest
+    container_name: guacd
+    restart: unless-stopped
+
+  guac-websocket:
+    build:
+      context: ./guac-bridge
+    container_name: guac-websocket
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - GUACD_HOST=guacd
+      - GUACD_PORT=4822
+      - PORT=8080
+      - SECRET_KEY=${SECRET_KEY:-nscc-lab-portal-secret-key-39281}
+    depends_on:
+      - guacd
+
   npm:
     image: jc21/nginx-proxy-manager:latest
     container_name: nginx-proxy-manager
@@ -23,3 +43,4 @@ services:
       - ./npm/letsencrypt:/etc/letsencrypt
     depends_on:
       - proxmox-app
+      - guac-websocket

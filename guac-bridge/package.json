@@ -1,0 +1,12 @@
+{
+  "name": "guac-bridge",
+  "version": "1.0.0",
+  "description": "WebSocket bridge between browser and guacd",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "guacamole-lite": "^0.6.4"
+  }
+}

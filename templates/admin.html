@@ -215,11 +215,14 @@
                         </td>
                         <td>
                             <div style="display: flex; gap: 0.35rem;">
-                                <a href="/api/{{ vm.course_id }}/vv/{{ vm.vmid }}" class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" title="Open SPICE Console">
-                                    &#128225; Console
+                                <a href="/{{ vm.course_id }}/console/{{ vm.vmid }}" target="_blank" class="btn btn-primary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; background: #0284c7; border-color: #0369a1; {% if not vm.last_ip %}pointer-events: none; opacity: 0.4;{% endif %}" title="Open In-Browser HTML5 Desktop">
+                                    &#128421; Desktop
+                                </a>
+                                <a href="/api/{{ vm.course_id }}/vv/{{ vm.vmid }}" class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" title="Open Virt-Viewer SPICE Console">
+                                    &#128225; SPICE
                                 </a>
                                 {% if vm.course.supports_rdp %}
-                                <a href="/api/{{ vm.course_id }}/rdp/{{ vm.vmid }}" class="btn btn-primary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; {% if not vm.last_ip %}pointer-events: none; opacity: 0.4;{% endif %}" title="Download RDP Shortcut">
+                                <a href="/api/{{ vm.course_id }}/rdp/{{ vm.vmid }}" class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; {% if not vm.last_ip %}pointer-events: none; opacity: 0.4;{% endif %}" title="Download RDP Shortcut">
                                     &#128187; RDP
                                 </a>
                                 {% endif %}
