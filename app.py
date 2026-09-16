@@ -398,6 +398,193 @@ gatewayusagemethod:i:0
         abort(500, description=str(e))
 
 # ==========================================
+# Instructor Admin Console Endpoints
+# ==========================================
+
+@app.route("/admin")
+def admin_dashboard():
+    """Renders the Instructor Fleet & Lab Manager console."""
+    courses = Course.query.all()
+    templates = LabTemplate.query.all()
+    vms = StudentVM.query.order_by(StudentVM.created_at.desc()).all()
+    total_students = User.query.filter_by(role="student").count()
+    running_vms = sum(1 for v in vms if v.status == "running")
+    published_count = sum(1 for t in templates if t.is_published)
+
+    return render_template(
+        "admin.html",
+        courses=courses,
+        templates=templates,
+        vms=vms,
+        total_vms=len(vms),
+        running_vms=running_vms,
+        total_students=total_students,
+        published_templates_count=published_count
+    )
+
+@app.route("/api/admin/fleet", methods=["GET"])
+def api_admin_fleet_refresh():
+    """Syncs live status from Proxmox for all registered student VMs."""
+    proxmox = get_proxmox_client()
+    if not proxmox:
+        return jsonify({"error": "Proxmox not configured"}), 503
+
+    vms = StudentVM.query.all()
+    updated = 0
+    for vm in vms:
+        try:
+            curr = proxmox.nodes(vm.node).qemu(vm.vmid).status.current.get()
+            status = curr.get("status", "stopped")
+            vm.status = status
+            if status == "running":
+                ip = get_vm_ip(proxmox, vm.node, vm.vmid)
+                if ip:
+                    vm.last_ip = ip
+            updated += 1
+        except Exception:
+            pass
+
+    db.session.commit()
+    return jsonify({"success": True, "updated": updated, "total": len(vms)})
+
+@app.route("/api/admin/templates", methods=["POST"])
+def api_admin_add_template():
+    """Registers and publishes a new template in the portal."""
+    data = request.get_json() or {}
+    course_id = data.get("course_id")
+    vmid = data.get("template_vmid")
+    name = data.get("name")
+
+    if not course_id or not vmid or not name:
+        return jsonify({"success": False, "error": "course_id, template_vmid, and name are required."}), 400
+
+    course = db.session.get(Course, course_id)
+    if not course:
+        return jsonify({"success": False, "error": "Course not found."}), 404
+
+    slug = name.lower().replace(" ", "-").replace(":", "").replace("/", "")[:32]
+
+    tmpl = LabTemplate(
+        course_id=course.id,
+        template_vmid=int(vmid),
+        name=name,
+        slug=slug,
+        description=data.get("description", ""),
+        os_type=data.get("os_type", "windows"),
+        supports_rdp=data.get("supports_rdp", True),
+        supports_spice=True,
+        preferred_node=data.get("preferred_node", "pve2"),
+        default_username=data.get("default_username", ".\\Student"),
+        is_published=data.get("is_published", True)
+    )
+    db.session.add(tmpl)
+    db.session.commit()
+    return jsonify({"success": True, "template": tmpl.to_dict()}), 201
+
+@app.route("/api/admin/templates/<int:template_id>", methods=["PATCH"])
+def api_admin_update_template(template_id):
+    """Updates publish status or details for a template."""
+    tmpl = db.session.get(LabTemplate, template_id)
+    if not tmpl:
+        return jsonify({"error": "Template not found"}), 404
+
+    data = request.get_json() or {}
+    if "is_published" in data:
+        tmpl.is_published = bool(data["is_published"])
+    if "name" in data:
+        tmpl.name = data["name"]
+    if "description" in data:
+        tmpl.description = data["description"]
+
+    db.session.commit()
+    return jsonify({"success": True, "template": tmpl.to_dict()})
+
+@app.route("/api/admin/templates/<int:template_id>", methods=["DELETE"])
+def api_admin_delete_template(template_id):
+    """Removes a template definition from the portal."""
+    tmpl = db.session.get(LabTemplate, template_id)
+    if not tmpl:
+        return jsonify({"error": "Template not found"}), 404
+
+    db.session.delete(tmpl)
+    db.session.commit()
+    return jsonify({"success": True, "message": "Template removed from portal."})
+
+@app.route("/api/admin/vm/<int:vmid>", methods=["DELETE"])
+def api_admin_delete_vm(vmid):
+    """Deletes a student VM from Proxmox and database."""
+    proxmox = get_proxmox_client()
+    vm_record = StudentVM.query.filter_by(vmid=vmid).first()
+
+    if proxmox and vm_record:
+        try:
+            try:
+                proxmox.nodes(vm_record.node).qemu(vmid).status.stop.post()
+            except Exception:
+                pass
+            proxmox.nodes(vm_record.node).qemu(vmid).delete()
+        except Exception as e:
+            logger.warning(f"Proxmox deletion error for VM {vmid}: {e}")
+
+    if vm_record:
+        db.session.delete(vm_record)
+        db.session.commit()
+
+    return jsonify({"success": True, "message": f"VM {vmid} deleted."})
+
+@app.route("/api/admin/ansible/inventory", methods=["GET"])
+def api_admin_ansible_inventory():
+    """
+    Exports dynamic Ansible JSON inventory.
+    """
+    vms = StudentVM.query.all()
+    inventory = {
+        "_meta": {
+            "hostvars": {}
+        },
+        "all": {
+            "children": ["ungrouped"]
+        },
+        "ungrouped": {
+            "hosts": []
+        }
+    }
+
+    courses = Course.query.all()
+    for c in courses:
+        group_name = c.code.lower()
+        inventory[group_name] = {"hosts": [], "children": []}
+        inventory["all"]["children"].append(group_name)
+
+    templates = LabTemplate.query.all()
+    for t in templates:
+        tmpl_group = f"{t.course.code.lower()}_{t.slug}".replace("-", "_")
+        inventory[tmpl_group] = {"hosts": []}
+        course_group = t.course.code.lower()
+        if course_group in inventory:
+            inventory[course_group]["children"].append(tmpl_group)
+
+    for vm in vms:
+        host_alias = vm.name
+        tmpl_group = f"{vm.course.code.lower()}_{vm.template.slug}".replace("-", "_") if vm.template else "ungrouped"
+
+        if tmpl_group in inventory:
+            inventory[tmpl_group]["hosts"].append(host_alias)
+        else:
+            inventory["ungrouped"]["hosts"].append(host_alias)
+
+        inventory["_meta"]["hostvars"][host_alias] = {
+            "ansible_host": vm.last_ip or "127.0.0.1",
+            "ansible_user": vm.template.default_username if vm.template else ".\\Student",
+            "proxmox_vmid": vm.vmid,
+            "proxmox_node": vm.node,
+            "student_id": vm.user_id,
+            "status": vm.status
+        }
+
+    return jsonify(inventory)
+
+# ==========================================
 # Legacy Route Compatibility
 # ==========================================
 

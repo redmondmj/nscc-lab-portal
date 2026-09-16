@@ -12,7 +12,7 @@ ssh $RemoteHost "mkdir -p $RemoteDir/config $RemoteDir/templates $RemoteDir/stat
 # Copy project files
 scp app.py models.py db_init.py provisioner.py Dockerfile requirements.txt docker-compose.yml "${RemoteHost}:${RemoteDir}/"
 scp config/courses.json "${RemoteHost}:${RemoteDir}/config/"
-scp templates/base.html templates/index.html templates/course.html "${RemoteHost}:${RemoteDir}/templates/"
+scp templates/*.html "${RemoteHost}:${RemoteDir}/templates/"
 scp static/logo.png "${RemoteHost}:${RemoteDir}/static/"
 
 Write-Host "Files synced successfully." -ForegroundColor Green

@@ -1,0 +1,538 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Console - NSCC Lab Portal{% endblock %}
+
+{% block extra_head %}
+<style>
+    .admin-container {
+        width: 100%;
+        max-width: 1200px;
+        background: var(--card-bg);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 2rem;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .nav-tabs {
+        display: flex;
+        gap: 0.5rem;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 1.5rem;
+        padding-bottom: 0.5rem;
+    }
+    .nav-tab {
+        padding: 0.6rem 1.2rem;
+        border-radius: 8px;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.95rem;
+        cursor: pointer;
+        border: 1px solid transparent;
+        transition: all 0.2s;
+    }
+    .nav-tab:hover {
+        color: var(--text-main);
+        background: rgba(255, 255, 255, 0.05);
+    }
+    .nav-tab.active {
+        color: #fff;
+        background: #2563eb;
+    }
+    .stat-card {
+        background: rgba(15, 23, 42, 0.6);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1.25rem;
+        display: flex;
+        flex-direction: column;
+    }
+    .stat-value {
+        font-size: 1.8rem;
+        font-weight: 700;
+        color: #fff;
+        margin-top: 0.25rem;
+    }
+    .stat-label {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 1rem;
+        font-size: 0.9rem;
+    }
+    th {
+        text-align: left;
+        padding: 0.85rem 1rem;
+        background: rgba(15, 23, 42, 0.8);
+        color: var(--text-muted);
+        font-weight: 600;
+        border-bottom: 1px solid var(--border);
+    }
+    td {
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+        color: #e2e8f0;
+    }
+    tr:hover td {
+        background: rgba(255, 255, 255, 0.02);
+    }
+    .search-bar {
+        padding: 0.65rem 1rem;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        background: #0f172a;
+        color: #fff;
+        font-size: 0.9rem;
+        width: 320px;
+    }
+    .modal {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        backdrop-filter: blur(4px);
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    .modal-content {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 2rem;
+        width: 100%;
+        max-width: 540px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="admin-container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+        <div>
+            <span class="badge badge-warning">Faculty Command Center</span>
+            <h1>Instructor Fleet & Lab Manager</h1>
+            <p class="subtitle" style="margin-bottom: 0;">Manage course lab templates, monitor student VMs, and export dynamic Ansible inventory.</p>
+        </div>
+        <div>
+            <button class="btn btn-primary" onclick="openAddTemplateModal()">
+                + Publish New Template
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+        <div class="stat-card">
+            <span class="stat-label">Total Student VMs</span>
+            <span id="statTotalVms" class="stat-value">{{ total_vms }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Active / Running</span>
+            <span id="statRunningVms" class="stat-value" style="color: #34d399;">{{ running_vms }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Active Students</span>
+            <span id="statStudents" class="stat-value">{{ total_students }}</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-label">Published Templates</span>
+            <span id="statTemplates" class="stat-value" style="color: #60a5fa;">{{ published_templates_count }}</span>
+        </div>
+    </div>
+
+    <!-- Alert / Toast Banner -->
+    <div id="adminAlert" class="alert">
+        <span id="adminAlertMsg"></span>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+        <div class="nav-tab active" onclick="switchTab('fleetTab', this)">Student Fleet Overview</div>
+        <div class="nav-tab" onclick="switchTab('templatesTab', this)">Course Lab Templates</div>
+        <div class="nav-tab" onclick="switchTab('ansibleTab', this)">Ansible & Automation</div>
+    </div>
+
+    <!-- TAB 1: Student Fleet Overview -->
+    <div id="fleetTab">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                <input type="text" id="fleetSearch" class="search-bar" placeholder="Search by Student Name, W#, or VM..." oninput="filterFleetTable()">
+                <select id="courseFilter" class="search-bar" style="width: 160px;" onchange="filterFleetTable()">
+                    <option value="">All Courses</option>
+                    {% for c in courses %}
+                    <option value="{{ c.code }}">{{ c.code }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="refreshFleet()">
+                    &#8635; Refresh Status
+                </button>
+            </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table id="fleetTable">
+                <thead>
+                    <tr>
+                        <th>Student</th>
+                        <th>Course</th>
+                        <th>Lab / Template</th>
+                        <th>VM ID & Name</th>
+                        <th>Node</th>
+                        <th>Status</th>
+                        <th>IP Address</th>
+                        <th>Support Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="fleetTableBody">
+                    {% for vm in vms %}
+                    <tr data-search="{{ vm.user_id }} {{ vm.user.name }} {{ vm.name }} {{ vm.course.code }}" data-course="{{ vm.course.code }}">
+                        <td>
+                            <strong>{{ vm.user.name or vm.user_id }}</strong>
+                            <span style="display: block; font-size: 0.8rem; color: var(--text-muted); font-family: monospace;">{{ vm.user_id }}</span>
+                        </td>
+                        <td><span class="badge">{{ vm.course.code }}</span></td>
+                        <td>{{ vm.template.name if vm.template else 'Custom Lab' }}</td>
+                        <td>
+                            <code>{{ vm.vmid }}</code>
+                            <span style="display: block; font-size: 0.75rem; color: var(--text-muted);">{{ vm.name }}</span>
+                        </td>
+                        <td>{{ vm.node }}</td>
+                        <td>
+                            <span class="badge {% if vm.status == 'running' %}badge-success{% else %}badge-warning{% endif %}">
+                                {{ vm.status.upper() }}
+                            </span>
+                        </td>
+                        <td>
+                            <span style="font-family: monospace; color: #38bdf8;">{{ vm.last_ip or (vm.status == 'running' and 'Acquiring...' or 'Offline') }}</span>
+                        </td>
+                        <td>
+                            <div style="display: flex; gap: 0.35rem;">
+                                <a href="/api/{{ vm.course_id }}/vv/{{ vm.vmid }}" class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" title="Open SPICE Console">
+                                    &#128225; Console
+                                </a>
+                                {% if vm.course.supports_rdp %}
+                                <a href="/api/{{ vm.course_id }}/rdp/{{ vm.vmid }}" class="btn btn-primary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; {% if not vm.last_ip %}pointer-events: none; opacity: 0.4;{% endif %}" title="Download RDP Shortcut">
+                                    &#128187; RDP
+                                </a>
+                                {% endif %}
+                                <button class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" onclick="powerAction('{{ vm.course_id }}', {{ vm.vmid }}, 'restart')" title="Reboot VM">
+                                    &#8635;
+                                </button>
+                                <button class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; color: #f87171;" onclick="destroyStudentVm('{{ vm.course_id }}', {{ vm.vmid }})" title="Delete VM">
+                                    &times;
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- TAB 2: Course Lab Templates -->
+    <div id="templatesTab" style="display: none;">
+        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
+            Published templates are visible to enrolled students for single-click self-service provisioning.
+        </p>
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Course</th>
+                        <th>Template Name</th>
+                        <th>Proxmox Template VMID</th>
+                        <th>Node</th>
+                        <th>OS Type</th>
+                        <th>RDP Enabled</th>
+                        <th>Publish Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tmpl in templates %}
+                    <tr>
+                        <td><span class="badge">{{ tmpl.course.code }}</span></td>
+                        <td>
+                            <strong>{{ tmpl.name }}</strong>
+                            <span style="display: block; font-size: 0.8rem; color: var(--text-muted);">{{ tmpl.description }}</span>
+                        </td>
+                        <td><code>{{ tmpl.template_vmid }}</code></td>
+                        <td>{{ tmpl.preferred_node }}</td>
+                        <td><span class="badge {% if tmpl.os_type == 'windows' %}badge-info{% else %}badge-warning{% endif %}">{{ tmpl.os_type.upper() }}</span></td>
+                        <td>{{ "Yes" if tmpl.supports_rdp else "No (SPICE Only)" }}</td>
+                        <td>
+                            <span class="badge {% if tmpl.is_published %}badge-success{% else %}badge-danger{% endif %}">
+                                {{ "PUBLISHED" if tmpl.is_published else "DRAFT / HIDDEN" }}
+                            </span>
+                        </td>
+                        <td>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="toggleTemplatePublish({{ tmpl.id }}, {{ 'false' if tmpl.is_published else 'true' }})">
+                                    {{ "Unpublish" if tmpl.is_published else "Publish" }}
+                                </button>
+                                <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem; color: #f87171;" onclick="deleteTemplate({{ tmpl.id }})">
+                                    Delete
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- TAB 3: Ansible & Automation -->
+    <div id="ansibleTab" style="display: none;">
+        <h3 style="color: #fff; font-size: 1.15rem; margin-bottom: 0.5rem;">Dynamic Ansible Inventory</h3>
+        <p style="font-size: 0.9rem; color: var(--text-muted); line-height: 1.5; margin-bottom: 1.5rem;">
+            You can query or pass this portal directly as a dynamic inventory source to Ansible. Groups are structured by course and published lab templates.
+        </p>
+
+        <div style="background: #0f172a; border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
+            <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.5rem;">Inventory URL:</span>
+            <code style="font-size: 0.95rem; color: #38bdf8;">http://10.10.0.103/api/admin/ansible/inventory</code>
+            <div style="margin-top: 1rem;">
+                <a href="/api/admin/ansible/inventory" target="_blank" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;">
+                    Preview JSON Inventory &rarr;
+                </a>
+            </div>
+        </div>
+
+        <h4 style="color: #cbd5e1; font-size: 1rem; margin-bottom: 0.5rem;">Usage with Ansible Playbooks:</h4>
+        <pre style="background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; color: #f1f5f9; font-family: monospace; font-size: 0.85rem; overflow-x: auto;">
+# Run a playbook targeting all OSYS1200 student VMs:
+ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/audit_lab.yml --limit osys1200
+
+# Ping all active VMs in the fleet:
+ansible -i "http://10.10.0.103/api/admin/ansible/inventory" all -m win_ping
+        </pre>
+    </div>
+</div>
+
+<!-- Add Template Modal -->
+<div id="addTemplateModal" class="modal">
+    <div class="modal-content">
+        <h2 style="font-size: 1.3rem; color: #fff; margin-bottom: 0.5rem;">Publish Proxmox Template</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+            Connect a Proxmox VM template to a course so students can deploy it on-demand.
+        </p>
+        <form id="addTemplateForm" onsubmit="submitNewTemplate(event)">
+            <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Target Course:</label>
+                    <select id="modalCourse" required style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                        {% for c in courses %}
+                        <option value="{{ c.id }}">{{ c.code }} - {{ c.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Template VMID:</label>
+                        <input type="number" id="modalVmid" required placeholder="e.g. 2002" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Host Node:</label>
+                        <input type="text" id="modalNode" required value="pve2" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                    </div>
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Template Title:</label>
+                    <input type="text" id="modalName" required placeholder="e.g. Lab 4: Windows Storage Pools" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                </div>
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Description / Lab Brief:</label>
+                    <textarea id="modalDesc" rows="2" placeholder="Brief lab objectives or instructions..." style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;"></textarea>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">OS Type:</label>
+                        <select id="modalOs" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                            <option value="windows">Windows</option>
+                            <option value="linux">Linux</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Default User:</label>
+                        <input type="text" id="modalUser" value=".\Student" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                    </div>
+                </div>
+                <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
+                    <label style="font-size: 0.9rem; color: #e2e8f0; display: flex; align-items: center; gap: 0.4rem;">
+                        <input type="checkbox" id="modalRdp" checked> Enable RDP
+                    </label>
+                    <label style="font-size: 0.9rem; color: #e2e8f0; display: flex; align-items: center; gap: 0.4rem;">
+                        <input type="checkbox" id="modalPublish" checked> Publish Immediately
+                    </label>
+                </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.75rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeAddTemplateModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save & Publish</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    function showAdminAlert(msg, type) {
+        const box = document.getElementById("adminAlert");
+        const txt = document.getElementById("adminAlertMsg");
+        box.className = `alert alert-${type}`;
+        txt.innerText = msg;
+        box.style.display = "block";
+        setTimeout(() => { box.style.display = "none"; }, 5000);
+    }
+
+    function switchTab(tabId, el) {
+        document.getElementById("fleetTab").style.display = "none";
+        document.getElementById("templatesTab").style.display = "none";
+        document.getElementById("ansibleTab").style.display = "none";
+
+        document.querySelectorAll(".nav-tab").forEach(tab => tab.classList.remove("active"));
+        document.getElementById(tabId).style.display = "block";
+        el.classList.add("active");
+    }
+
+    function filterFleetTable() {
+        const q = document.getElementById("fleetSearch").value.toLowerCase();
+        const course = document.getElementById("courseFilter").value;
+        const rows = document.querySelectorAll("#fleetTableBody tr");
+
+        rows.forEach(row => {
+            const text = row.getAttribute("data-search").toLowerCase();
+            const rowCourse = row.getAttribute("data-course");
+            const matchesQuery = text.includes(q);
+            const matchesCourse = !course || (rowCourse === course);
+
+            row.style.display = (matchesQuery && matchesCourse) ? "" : "none";
+        });
+    }
+
+    async function refreshFleet() {
+        showAdminAlert("Refreshing live VM states from Proxmox cluster...", "info");
+        try {
+            const res = await fetch("/api/admin/fleet");
+            if (res.ok) {
+                window.location.reload();
+            }
+        } catch (e) {
+            showAdminAlert("Error refreshing fleet: " + e.message, "error");
+        }
+    }
+
+    async function powerAction(courseId, vmid, action) {
+        try {
+            const res = await fetch(`/api/${courseId}/${action}/${vmid}`, { method: "POST" });
+            const data = await res.json();
+            if (res.ok) {
+                showAdminAlert(`Action ${action} sent to VM ${vmid}.`, "info");
+                setTimeout(() => window.location.reload(), 3000);
+            } else {
+                showAdminAlert(data.error || "Action failed", "error");
+            }
+        } catch (e) {
+            showAdminAlert("Request error: " + e.message, "error");
+        }
+    }
+
+    async function destroyStudentVm(courseId, vmid) {
+        if (!confirm(`CAUTION: Are you sure you want to completely DELETE student VM ${vmid} from Proxmox? This cannot be undone.`)) return;
+
+        try {
+            const res = await fetch(`/api/admin/vm/${vmid}`, { method: "DELETE" });
+            const data = await res.json();
+            if (res.ok) {
+                showAdminAlert(data.message || `VM ${vmid} deleted.`, "success");
+                setTimeout(() => window.location.reload(), 2000);
+            } else {
+                showAdminAlert(data.error || "Failed to delete VM", "error");
+            }
+        } catch (e) {
+            showAdminAlert("Error: " + e.message, "error");
+        }
+    }
+
+    function openAddTemplateModal() {
+        document.getElementById("addTemplateModal").style.display = "flex";
+    }
+
+    function closeAddTemplateModal() {
+        document.getElementById("addTemplateModal").style.display = "none";
+    }
+
+    async function submitNewTemplate(e) {
+        e.preventDefault();
+        const payload = {
+            course_id: document.getElementById("modalCourse").value,
+            template_vmid: parseInt(document.getElementById("modalVmid").value),
+            preferred_node: document.getElementById("modalNode").value,
+            name: document.getElementById("modalName").value,
+            description: document.getElementById("modalDesc").value,
+            os_type: document.getElementById("modalOs").value,
+            default_username: document.getElementById("modalUser").value,
+            supports_rdp: document.getElementById("modalRdp").checked,
+            is_published: document.getElementById("modalPublish").checked
+        };
+
+        try {
+            const res = await fetch("/api/admin/templates", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showAdminAlert("Template published successfully!", "success");
+                closeAddTemplateModal();
+                setTimeout(() => window.location.reload(), 1500);
+            } else {
+                showAdminAlert(data.error || "Failed to publish template", "error");
+            }
+        } catch (err) {
+            showAdminAlert("Submission error: " + err.message, "error");
+        }
+    }
+
+    async function toggleTemplatePublish(templateId, publishState) {
+        try {
+            const res = await fetch(`/api/admin/templates/${templateId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ is_published: publishState })
+            });
+            if (res.ok) {
+                showAdminAlert("Template status updated.", "info");
+                setTimeout(() => window.location.reload(), 1000);
+            }
+        } catch (e) {
+            showAdminAlert("Error: " + e.message, "error");
+        }
+    }
+
+    async function deleteTemplate(templateId) {
+        if (!confirm("Are you sure you want to remove this template definition from the portal? (Does not delete VM in Proxmox)")) return;
+        try {
+            const res = await fetch(`/api/admin/templates/${templateId}`, { method: "DELETE" });
+            if (res.ok) {
+                showAdminAlert("Template removed.", "info");
+                setTimeout(() => window.location.reload(), 1000);
+            }
+        } catch (e) {
+            showAdminAlert("Error: " + e.message, "error");
+        }
+    }
+</script>
+{% endblock %}

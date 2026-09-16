@@ -67,5 +67,46 @@ class TestProxmoxApp(unittest.TestCase):
         data = res.get_json()
         self.assertFalse(data["success"])
 
+    def test_admin_dashboard_route(self):
+        """Test instructor admin console renders successfully."""
+        res = self.client.get("/admin")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b"Faculty Command Center", res.data)
+        self.assertIn(b"Instructor Fleet", res.data)
+        self.assertIn(b"Dynamic Ansible Inventory", res.data)
+
+    def test_admin_ansible_inventory(self):
+        """Test dynamic Ansible inventory endpoint."""
+        res = self.client.get("/api/admin/ansible/inventory")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertIn("_meta", data)
+        self.assertIn("all", data)
+        self.assertIn("osys1200", data)
+
+    def test_admin_template_lifecycle(self):
+        """Test adding, updating, and deleting a template via admin API."""
+        # Add template
+        add_res = self.client.post("/api/admin/templates", json={
+            "course_id": "osys1200",
+            "template_vmid": 2005,
+            "name": "Lab 5 Storage Spaces",
+            "description": "Test template",
+            "os_type": "windows"
+        })
+        self.assertEqual(add_res.status_code, 201)
+        tmpl_id = add_res.get_json()["template"]["id"]
+
+        # Patch status
+        patch_res = self.client.patch(f"/api/admin/templates/{tmpl_id}", json={
+            "is_published": False
+        })
+        self.assertEqual(patch_res.status_code, 200)
+        self.assertFalse(patch_res.get_json()["template"]["is_published"])
+
+        # Delete template
+        del_res = self.client.delete(f"/api/admin/templates/{tmpl_id}")
+        self.assertEqual(del_res.status_code, 200)
+
 if __name__ == "__main__":
     unittest.main()
