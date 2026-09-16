@@ -1021,8 +1021,12 @@ def auth_callback():
     claims = result["id_token_claims"]
     user_info = extract_user_from_claims(claims)
 
-    # Sync user with SQLite DB
-    user_record = db.session.get(User, user_info["id"])
+    # Sync user with SQLite DB (look up by ID or by email to avoid unique constraint collisions)
+    user_record = (
+        db.session.get(User, user_info["id"])
+        or db.session.get(User, user_info["id"].upper())
+        or User.query.filter(db.func.lower(User.email) == user_info["email"].lower()).first()
+    )
     if not user_record:
         user_record = User(
             id=user_info["id"],
