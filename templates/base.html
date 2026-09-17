@@ -260,8 +260,9 @@
         </a>
         <nav class="header-nav" style="display: flex; align-items: center; gap: 1.25rem;">
             <a href="/" style="margin-left: 0;">Courses</a>
-            <a href="/osys1200" style="margin-left: 0;">OSYS1200</a>
-            <a href="/netw2710" style="margin-left: 0;">NETW2710</a>
+            {% for c in nav_courses %}
+            <a href="/{{ c.id }}" style="margin-left: 0;">{{ c.code }}</a>
+            {% endfor %}
             {% if not current_user or current_user.role in ['instructor', 'admin'] %}
             <a href="/admin" style="margin-left: 0; color: #60a5fa; font-weight: 600;">Admin</a>
             {% endif %}

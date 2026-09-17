@@ -43,8 +43,13 @@ db.init_app(app)
 seed_database(app)
 
 @app.context_processor
-def inject_user():
-    return dict(current_user=session.get("user"))
+def inject_global_vars():
+    nav_courses = []
+    try:
+        nav_courses = Course.query.order_by(Course.code).all()
+    except Exception:
+        pass
+    return dict(current_user=session.get("user"), nav_courses=nav_courses)
 
 def login_required(f):
     @wraps(f)
