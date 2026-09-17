@@ -787,10 +787,10 @@ def api_admin_add_template():
     db.session.commit()
     return jsonify({"success": True, "template": tmpl.to_dict(include_sensitive=True)}), 201
 
-@app.route("/api/admin/templates/<int:template_id>", methods=["PATCH"])
+@app.route("/api/admin/templates/<int:template_id>", methods=["PUT", "PATCH"])
 @admin_required
 def api_admin_update_template(template_id):
-    """Updates publish status or details for a template."""
+    """Updates publish status, credentials, node, or details for a template."""
     tmpl = db.session.get(LabTemplate, template_id)
     if not tmpl:
         return jsonify({"error": "Template not found"}), 404
@@ -805,10 +805,21 @@ def api_admin_update_template(template_id):
     if "default_username" in data:
         tmpl.default_username = data["default_username"]
     if "default_password" in data:
-        tmpl.default_password = data["default_password"] or None
+        pwd = data["default_password"]
+        tmpl.default_password = pwd.strip() if pwd and pwd.strip() else None
+    if "template_vmid" in data and data["template_vmid"]:
+        tmpl.template_vmid = int(data["template_vmid"])
+    if "preferred_node" in data and data["preferred_node"]:
+        tmpl.preferred_node = str(data["preferred_node"]).strip()
+    if "os_type" in data:
+        tmpl.os_type = data["os_type"]
+    if "supports_rdp" in data:
+        tmpl.supports_rdp = bool(data["supports_rdp"])
+    if "supports_spice" in data:
+        tmpl.supports_spice = bool(data["supports_spice"])
 
     db.session.commit()
-    return jsonify({"success": True, "template": tmpl.to_dict()})
+    return jsonify({"success": True, "template": tmpl.to_dict(include_sensitive=True)})
 
 @app.route("/api/admin/templates/<int:template_id>", methods=["DELETE"])
 @admin_required

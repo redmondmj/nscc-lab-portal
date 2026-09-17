@@ -408,6 +408,10 @@
                         </td>
                         <td>
                             <div style="display: flex; gap: 0.5rem;">
+                                <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" 
+                                    onclick='openEditTemplateModal({{ tmpl.to_dict(include_sensitive=True)|tojson }})' title="Edit Template Details & Password">
+                                    Edit
+                                </button>
                                 <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" onclick="toggleTemplatePublish({{ tmpl.id }}, {{ 'false' if tmpl.is_published else 'true' }})">
                                     {{ "Unpublish" if tmpl.is_published else "Publish" }}
                                 </button>
@@ -534,14 +538,16 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
     </div>
 </div>
 
-<!-- Add Template Modal -->
+<!-- Add / Edit Template Modal -->
 <div id="addTemplateModal" class="modal">
     <div class="modal-content">
-        <h2 style="font-size: 1.3rem; color: #fff; margin-bottom: 0.5rem;">Publish Proxmox Template</h2>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+        <h2 id="templateModalTitle" style="font-size: 1.3rem; color: #fff; margin-bottom: 0.5rem;">Publish Proxmox Template</h2>
+        <p id="templateModalSubtitle" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
             Connect a Proxmox VM template to a course so students can deploy it on-demand.
         </p>
-        <form id="addTemplateForm" onsubmit="submitNewTemplate(event)">
+        <form id="addTemplateForm" onsubmit="submitTemplateForm(event)">
+            <input type="hidden" id="templateModalMode" value="create">
+            <input type="hidden" id="templateModalId" value="">
             <div style="display: flex; flex-direction: column; gap: 1rem;">
                 <div>
                     <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Target Course:</label>
@@ -582,8 +588,8 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
                         <input type="text" id="modalUser" value=".\Student" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
                     </div>
                     <div>
-                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Default Lab Password:</label>
-                        <input type="text" id="modalPass" placeholder="e.g. It$tudents (or blank to inherit)" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Default Lab Password / Passphrase:</label>
+                        <input type="text" id="modalPass" placeholder="e.g. Learn2=work=machine (or blank to inherit)" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
                     </div>
                 </div>
                 <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
@@ -597,7 +603,7 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
             </div>
             <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.75rem;">
                 <button type="button" class="btn btn-secondary" onclick="closeAddTemplateModal()">Cancel</button>
-                <button type="submit" class="btn btn-primary">Save & Publish</button>
+                <button type="submit" class="btn btn-primary" id="modalTemplateSubmitBtn">Save & Publish</button>
             </div>
         </form>
     </div>
@@ -994,6 +1000,48 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
     }
 
     function openAddTemplateModal() {
+        document.getElementById("templateModalMode").value = "create";
+        document.getElementById("templateModalId").value = "";
+        document.getElementById("templateModalTitle").innerText = "Publish Proxmox Template";
+        document.getElementById("templateModalSubtitle").innerText = "Connect a Proxmox VM template to a course so students can deploy it on-demand.";
+        document.getElementById("modalTemplateSubmitBtn").innerText = "Save & Publish";
+
+        const courseSelect = document.getElementById("modalCourse");
+        courseSelect.disabled = false;
+        document.getElementById("modalVmid").value = "";
+        document.getElementById("modalNode").value = "pve2";
+        document.getElementById("modalName").value = "";
+        document.getElementById("modalDesc").value = "";
+        document.getElementById("modalOs").value = "windows";
+        document.getElementById("modalUser").value = ".\\Student";
+        document.getElementById("modalPass").value = "";
+        document.getElementById("modalRdp").checked = true;
+        document.getElementById("modalPublish").checked = true;
+
+        document.getElementById("addTemplateModal").style.display = "flex";
+    }
+
+    function openEditTemplateModal(tmpl) {
+        document.getElementById("templateModalMode").value = "edit";
+        document.getElementById("templateModalId").value = tmpl.id;
+        document.getElementById("templateModalTitle").innerText = `Edit Template: ${tmpl.name}`;
+        document.getElementById("templateModalSubtitle").innerText = "Update template parameters, hardware host node, and default login credentials.";
+        document.getElementById("modalTemplateSubmitBtn").innerText = "Save Changes";
+
+        const courseSelect = document.getElementById("modalCourse");
+        courseSelect.value = tmpl.course_id;
+        courseSelect.disabled = true;
+
+        document.getElementById("modalVmid").value = tmpl.template_vmid;
+        document.getElementById("modalNode").value = tmpl.preferred_node || "pve2";
+        document.getElementById("modalName").value = tmpl.name || "";
+        document.getElementById("modalDesc").value = tmpl.description || "";
+        document.getElementById("modalOs").value = tmpl.os_type || "windows";
+        document.getElementById("modalUser").value = tmpl.default_username || "";
+        document.getElementById("modalPass").value = tmpl.default_password || "";
+        document.getElementById("modalRdp").checked = !!tmpl.supports_rdp;
+        document.getElementById("modalPublish").checked = !!tmpl.is_published;
+
         document.getElementById("addTemplateModal").style.display = "flex";
     }
 
@@ -1001,34 +1049,41 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
         document.getElementById("addTemplateModal").style.display = "none";
     }
 
-    async function submitNewTemplate(e) {
+    async function submitTemplateForm(e) {
         e.preventDefault();
+        const mode = document.getElementById("templateModalMode").value;
+        const tmplId = document.getElementById("templateModalId").value;
         const payload = {
             course_id: document.getElementById("modalCourse").value,
             template_vmid: parseInt(document.getElementById("modalVmid").value),
-            preferred_node: document.getElementById("modalNode").value,
-            name: document.getElementById("modalName").value,
-            description: document.getElementById("modalDesc").value,
+            preferred_node: document.getElementById("modalNode").value.trim(),
+            name: document.getElementById("modalName").value.trim(),
+            description: document.getElementById("modalDesc").value.trim(),
             os_type: document.getElementById("modalOs").value,
-            default_username: document.getElementById("modalUser").value,
+            default_username: document.getElementById("modalUser").value.trim(),
             default_password: document.getElementById("modalPass").value.trim() || null,
             supports_rdp: document.getElementById("modalRdp").checked,
             is_published: document.getElementById("modalPublish").checked
         };
 
+        const url = mode === "create" ? "/api/admin/templates" : `/api/admin/templates/${tmplId}`;
+        const method = mode === "create" ? "POST" : "PUT";
+
+        showAdminAlert(mode === "create" ? "Publishing template..." : "Saving template changes...", "info");
+
         try {
-            const res = await fetch("/api/admin/templates", {
-                method: "POST",
+            const res = await fetch(url, {
+                method: method,
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(payload)
             });
             const data = await res.json();
             if (res.ok && data.success) {
-                showAdminAlert("Template published successfully!", "success");
+                showAdminAlert(mode === "create" ? "Template published successfully!" : "Template updated successfully!", "success");
                 closeAddTemplateModal();
-                setTimeout(() => window.location.reload(), 1500);
+                setTimeout(() => window.location.reload(), 1000);
             } else {
-                showAdminAlert(data.error || "Failed to publish template", "error");
+                showAdminAlert(data.error || "Failed to save template", "error");
             }
         } catch (err) {
             showAdminAlert("Submission error: " + err.message, "error");

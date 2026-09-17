@@ -110,12 +110,27 @@ class TestProxmoxApp(unittest.TestCase):
         self.assertEqual(add_res.status_code, 201)
         tmpl_id = add_res.get_json()["template"]["id"]
 
-        # Patch status
+        # Patch status and update password/credentials
         patch_res = self.client.patch(f"/api/admin/templates/{tmpl_id}", json={
-            "is_published": False
+            "is_published": False,
+            "default_password": "NewSecretPassphrase!",
+            "default_username": ".\\LabUser",
+            "preferred_node": "pve"
         })
         self.assertEqual(patch_res.status_code, 200)
-        self.assertFalse(patch_res.get_json()["template"]["is_published"])
+        updated_data = patch_res.get_json()["template"]
+        self.assertFalse(updated_data["is_published"])
+        self.assertEqual(updated_data["default_password"], "NewSecretPassphrase!")
+        self.assertEqual(updated_data["default_username"], ".\\LabUser")
+        self.assertEqual(updated_data["preferred_node"], "pve")
+
+        # Also test PUT method
+        put_res = self.client.put(f"/api/admin/templates/{tmpl_id}", json={
+            "name": "Lab 5 Storage Spaces Updated",
+            "default_password": "Learn2=work=machine"
+        })
+        self.assertEqual(put_res.status_code, 200)
+        self.assertEqual(put_res.get_json()["template"]["default_password"], "Learn2=work=machine")
 
         # Delete template
         del_res = self.client.delete(f"/api/admin/templates/{tmpl_id}")
