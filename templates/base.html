@@ -249,6 +249,41 @@
             border-color: rgba(59, 130, 246, 0.4);
             color: #93c5fd;
         }
+
+        @media (max-width: 640px) {
+            header {
+                padding: 0.75rem 1rem;
+                flex-direction: column;
+                gap: 0.75rem;
+                align-items: stretch;
+            }
+            .header-nav {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.75rem;
+                overflow-x: auto;
+                padding-bottom: 0.25rem;
+            }
+            .header-nav a {
+                margin-left: 0;
+                font-size: 0.85rem;
+                white-space: nowrap;
+            }
+            main {
+                padding: 1rem 0.75rem;
+            }
+            .container {
+                padding: 1.25rem 1rem !important;
+                border-radius: 12px;
+            }
+            h1 {
+                font-size: 1.4rem;
+            }
+            .subtitle {
+                font-size: 0.85rem;
+                margin-bottom: 1.25rem;
+            }
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
