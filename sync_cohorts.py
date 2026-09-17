@@ -75,11 +75,17 @@ def sync_entra_cohorts(app=None, groups=None):
                     user.email = upn
                     user.cohort = group
                     results["synced_count"] += 1
-                # Auto-enroll in cohort default course
-                target_course_id = "osys1200" if "Y1" in group else ("netw2710" if "Y2" in group else None)
-                if target_course_id:
-                    if not Enrollment.query.filter_by(user_id=username, course_id=target_course_id).first():
-                        db.session.add(Enrollment(user_id=username, course_id=target_course_id))
+                # Auto-enroll in cohort default courses
+                target_courses = []
+                if "Y1" in group:
+                    target_courses.append("osys1200")
+                if "Y2" in group:
+                    target_courses.append("netw2710")
+                    if "ITSM" in group:
+                        target_courses.append("osys3030")
+                for cid in target_courses:
+                    if not Enrollment.query.filter_by(user_id=username, course_id=cid).first():
+                        db.session.add(Enrollment(user_id=username, course_id=cid))
 
         db.session.commit()
         logger.info(f"Cohort sync complete: {results['synced_count']} student records updated.")

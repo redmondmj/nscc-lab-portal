@@ -86,10 +86,16 @@ def seed_database(app):
             # Seed default course enrollments based on student cohort and active VMs
             for user in User.query.all():
                 if user.cohort:
-                    target_course_id = "osys1200" if "Y1" in user.cohort else ("netw2710" if "Y2" in user.cohort else None)
-                    if target_course_id:
-                        if not Enrollment.query.filter_by(user_id=user.id, course_id=target_course_id).first():
-                            db.session.add(Enrollment(user_id=user.id, course_id=target_course_id))
+                    target_courses = []
+                    if "Y1" in user.cohort:
+                        target_courses.append("osys1200")
+                    if "Y2" in user.cohort:
+                        target_courses.append("netw2710")
+                        if "ITSM" in user.cohort:
+                            target_courses.append("osys3030")
+                    for cid in target_courses:
+                        if not Enrollment.query.filter_by(user_id=user.id, course_id=cid).first():
+                            db.session.add(Enrollment(user_id=user.id, course_id=cid))
 
             for vm in StudentVM.query.all():
                 if not Enrollment.query.filter_by(user_id=vm.user_id, course_id=vm.course_id).first():
