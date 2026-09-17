@@ -37,6 +37,26 @@
         "Your VM ID is your NSCC Student ID without the leading 'W0' (e.g., W01234567 becomes 1234567).",
         "Console Access: SPICE console requires Virt-Viewer (`winget install RedHat.VirtViewer`)."
       ]
+    },
+    "osys3030": {
+      "id": "osys3030",
+      "code": "OSYS3030",
+      "name": "OSYS3030 - Linux Operating Systems",
+      "subtitle": "Ubuntu Server Clean Install Lab",
+      "badge": "Ubuntu 26.04",
+      "description": "Clean install lab: boot the installer ISO and perform a complete installation of Ubuntu Server.",
+      "template_vmid": 3030,
+      "preferred_node": "pve",
+      "os_type": "linux",
+      "supports_rdp": false,
+      "supports_spice": true,
+      "default_username": "student",
+      "notes": [
+        "Your VM boots directly from the official Ubuntu Server 26.04 installer ISO.",
+        "Console Access: Click 'Virt-Viewer' to launch the installer interface (requires Virt-Viewer).",
+        "Once installed, run `sudo apt update && sudo apt install -y qemu-guest-agent` so the portal can detect your IP."
+      ]
     }
   }
 }
+
