@@ -51,9 +51,11 @@
       "supports_rdp": false,
       "supports_spice": true,
       "default_username": "student",
+      "default_password": "Learn2=work=machine",
       "notes": [
         "Your VM boots directly from the official Ubuntu Server 26.04 installer ISO.",
         "Console Access: Click 'Virt-Viewer' to launch the installer interface (requires Virt-Viewer).",
+        "Recommended Setup: Create username 'student' with passphrase 'Learn2=work=machine'.",
         "Once installed, run `sudo apt update && sudo apt install -y qemu-guest-agent` so the portal can detect your IP."
       ]
     }
