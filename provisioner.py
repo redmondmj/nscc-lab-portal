@@ -80,14 +80,19 @@ def provision_student_vm(proxmox, course, template, user, auto_start=True, full_
     if not success:
         raise RuntimeError(f"VM cloning failed: {exitstatus}")
 
-    # 5. Apply tags and metadata
+    # 5. Apply tags, metadata, and display settings
+    config_params = {
+        "tags": tags,
+        "description": f"Course: {course.name}\nStudent: {user.name} ({user.id})\nTemplate: {template.name}\nProvisioned: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
+    }
+    if template.supports_spice:
+        config_params["vga"] = "qxl"
+
     try:
-        proxmox.nodes(node).qemu(new_vmid).config.post(
-            tags=tags,
-            description=f"Course: {course.name}\nStudent: {user.name} ({user.id})\nTemplate: {template.name}\nProvisioned: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}"
-        )
+        proxmox.nodes(node).qemu(new_vmid).config.post(**config_params)
     except Exception as e:
-        logger.warning(f"Could not set tags/description on VM {new_vmid}: {e}")
+        logger.warning(f"Could not set tags/config on VM {new_vmid}: {e}")
+
 
     # 6. Record in Database
     student_vm = StudentVM(
