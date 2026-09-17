@@ -25,6 +25,12 @@ def seed_database(app):
                     conn.execute(db.text("ALTER TABLE users ADD COLUMN cohort VARCHAR(64)"))
                     conn.commit()
                     logger.info("Migrated users table: added cohort column.")
+
+                course_cols = [row[1] for row in conn.execute(db.text("PRAGMA table_info(courses)")).fetchall()]
+                if "custom_notes" not in course_cols:
+                    conn.execute(db.text("ALTER TABLE courses ADD COLUMN custom_notes TEXT DEFAULT ''"))
+                    conn.commit()
+                    logger.info("Migrated courses table: added custom_notes column.")
         except Exception as e:
             logger.warning(f"Column migration check note: {e}")
 
@@ -40,6 +46,8 @@ def seed_database(app):
 
             for course_id, cdata in courses_dict.items():
                 course = Course.query.get(course_id)
+                notes_list = cdata.get("notes", [])
+                notes_text = "\n".join(notes_list) if isinstance(notes_list, list) else str(notes_list or "")
                 if not course:
                     course = Course(
                         id=course_id,
@@ -51,10 +59,14 @@ def seed_database(app):
                         preferred_node=cdata.get("preferred_node", "pve2"),
                         default_username=cdata.get("default_username", ".\\Student"),
                         supports_rdp=cdata.get("supports_rdp", True),
-                        supports_spice=cdata.get("supports_spice", True)
+                        supports_spice=cdata.get("supports_spice", True),
+                        custom_notes=notes_text
                     )
                     db.session.add(course)
                     db.session.flush()
+                else:
+                    if not course.custom_notes and notes_text:
+                        course.custom_notes = notes_text
 
                 # Seed primary template if template_vmid is defined
                 tmpl_vmid = cdata.get("template_vmid")

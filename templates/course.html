@@ -99,15 +99,23 @@
     <div style="margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1.5rem;">
         <h3 style="font-size: 1rem; font-weight: 600; color: #cbd5e1; margin-bottom: 0.75rem;">Course Lab Notes:</h3>
         <ul style="padding-left: 1.25rem; font-size: 0.85rem; color: var(--text-muted); line-height: 1.6;">
-            <li>Your VM ID and name are tracked automatically via your NSCC Student ID.</li>
-            {% if course.supports_rdp %}
-            <li><strong>Remote Desktop (RDP):</strong> Once your VM is running and has acquired an IP, click <em>Connect via RDP</em> to download a pre-configured shortcut.</li>
-            {% endif %}
-            {% if course.supports_spice %}
-            <li><strong>Virt-Viewer Console:</strong> If network or display issues occur, use Virt-Viewer (<code>winget install RedHat.VirtViewer</code>).</li>
-            {% endif %}
-            {% if course.default_username %}
-            <li>Default Login Username: <code>{{ course.default_username }}</code></li>
+            {% if course.custom_notes and course.custom_notes.strip() %}
+                {% for line in course.custom_notes.splitlines() %}
+                    {% if line.strip() %}
+                    <li>{{ line.strip() | render_note }}</li>
+                    {% endif %}
+                {% endfor %}
+            {% else %}
+                <li>Your VM ID and name are tracked automatically via your NSCC Student ID.</li>
+                {% if course.supports_rdp %}
+                <li><strong>Remote Desktop (RDP):</strong> Once your VM is running and has acquired an IP, click <em>Connect via RDP</em> to download a pre-configured shortcut.</li>
+                {% endif %}
+                {% if course.supports_spice %}
+                <li><strong>Virt-Viewer Console:</strong> If network or display issues occur, use Virt-Viewer (<code>winget install RedHat.VirtViewer</code>).</li>
+                {% endif %}
+                {% if course.default_username %}
+                <li>Default Login Username: <code>{{ course.default_username }}</code></li>
+                {% endif %}
             {% endif %}
         </ul>
     </div>

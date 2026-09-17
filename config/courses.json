@@ -15,9 +15,10 @@
       "default_username": ".\\Student",
       "default_password": "It$tudents",
       "notes": [
-        "Your VM ID is your NSCC Student ID without the leading 'W0' (e.g., W01234567 becomes 1234567).",
-        "Recommended: Download the .rdp connection file once the VM is running and has acquired an IP address.",
-        "Console Access: SPICE console requires Virt-Viewer (`winget install RedHat.VirtViewer`)."
+        "Your VM ID and name are tracked automatically via your NSCC Student ID.",
+        "Remote Desktop (RDP): Once your VM is running and has acquired an IP, click Connect via RDP to download a pre-configured shortcut.",
+        "Virt-Viewer Console: If network or display issues occur, use Virt-Viewer (`winget install RedHat.VirtViewer`).",
+        "Default Login Username: .\\Student"
       ]
     },
     "netw2710": {
@@ -34,8 +35,9 @@
       "supports_spice": true,
       "default_username": "student",
       "notes": [
-        "Your VM ID is your NSCC Student ID without the leading 'W0' (e.g., W01234567 becomes 1234567).",
-        "Console Access: SPICE console requires Virt-Viewer (`winget install RedHat.VirtViewer`)."
+        "Your VM ID and name are tracked automatically via your NSCC Student ID.",
+        "Virt-Viewer Console: If network or display issues occur, use Virt-Viewer (`winget install RedHat.VirtViewer`).",
+        "Default Login Username: student"
       ]
     },
     "osys3030": {
@@ -53,8 +55,8 @@
       "default_username": "student",
       "default_password": "Learn2=work=machine",
       "notes": [
-        "Your VM boots directly from the official Ubuntu Server 26.04 installer ISO.",
-        "Console Access: Click 'Virt-Viewer' to launch the installer interface (requires Virt-Viewer).",
+        "Your VM ID and name are tracked automatically via your NSCC Student ID.",
+        "Virt-Viewer Console: If network or display issues occur, use Virt-Viewer (`winget install RedHat.VirtViewer`).",
         "Recommended Setup: Create username 'student' with passphrase 'Learn2=work=machine'.",
         "Once installed, run `sudo apt update && sudo apt install -y qemu-guest-agent` so the portal can detect your IP."
       ]

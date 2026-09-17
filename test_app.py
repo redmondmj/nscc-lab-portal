@@ -378,5 +378,70 @@ class TestProxmoxApp(unittest.TestCase):
             u = db.session.get(User, "test.enrollee")
             self.assertNotIn("osys1200", u.to_dict()["enrolled_courses"])
 
+    def test_admin_course_crud_lifecycle(self):
+        """Test creating, editing, and deleting a course via admin APIs."""
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "W0999999", "name": "Prof. Smith", "role": "instructor"}
+
+        # 1. Create a new course
+        course_data = {
+            "id": "csci4000",
+            "code": "CSCI4000",
+            "name": "CSCI4000 - Cloud Architecture",
+            "subtitle": "Kubernetes & Containers Lab",
+            "badge": "K8s / Linux",
+            "description": "Multi-node lab environment.",
+            "preferred_node": "pve",
+            "default_username": "cloudadmin",
+            "supports_rdp": False,
+            "supports_spice": True,
+            "custom_notes": "Step 1: Install k3s\nStep 2: Connect via Virt-Viewer (`winget install RedHat.VirtViewer`)"
+        }
+        res = self.client.post("/api/admin/courses", json=course_data)
+        self.assertEqual(res.status_code, 201)
+        created = res.get_json()["course"]
+        self.assertEqual(created["id"], "csci4000")
+        self.assertEqual(created["code"], "CSCI4000")
+        self.assertIn("Step 1: Install k3s", created["custom_notes"])
+
+        # 2. Duplicate check
+        dup_res = self.client.post("/api/admin/courses", json=course_data)
+        self.assertEqual(dup_res.status_code, 409)
+
+        # 3. View course portal renders custom notes
+        view_res = self.client.get("/csci4000")
+        self.assertEqual(view_res.status_code, 200)
+        self.assertIn(b"CSCI4000", view_res.data)
+        self.assertIn(b"Step 1: Install k3s", view_res.data)
+        self.assertIn(b"<code>winget install RedHat.VirtViewer</code>", view_res.data)
+
+        # 4. Edit course
+        edit_res = self.client.put("/api/admin/courses/csci4000", json={
+            "name": "CSCI4000 - Advanced Cloud Computing",
+            "custom_notes": "Updated note with **bold instructions**."
+        })
+        self.assertEqual(edit_res.status_code, 200)
+        updated = edit_res.get_json()["course"]
+        self.assertEqual(updated["name"], "CSCI4000 - Advanced Cloud Computing")
+        self.assertEqual(updated["custom_notes"], "Updated note with **bold instructions**.")
+
+        # Verify updated note renders bold in portal
+        view_updated = self.client.get("/csci4000")
+        self.assertIn(b"<strong>bold instructions</strong>", view_updated.data)
+
+        # 5. Delete course
+        del_res = self.client.delete("/api/admin/courses/csci4000")
+        self.assertEqual(del_res.status_code, 200)
+        self.assertTrue(del_res.get_json()["success"])
+
+        # Verify gone
+        gone_res = self.client.get("/csci4000")
+        self.assertEqual(gone_res.status_code, 404)
+
+        # 6. Verify course deletion is prevented when active student VMs exist
+        del_active_res = self.client.delete("/api/admin/courses/osys1200")
+        self.assertEqual(del_active_res.status_code, 400)
+        self.assertIn("Cannot delete course", del_active_res.get_json()["error"])
+
 if __name__ == "__main__":
     unittest.main()

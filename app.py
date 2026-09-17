@@ -1,9 +1,11 @@
 import os
+import re
 import json
 import logging
 import traceback
 from pathlib import Path
 from functools import wraps
+from markupsafe import Markup, escape
 from flask import Flask, Response, jsonify, render_template, request, abort, session, redirect, url_for
 
 from models import db, Course, LabTemplate, User, StudentVM, Enrollment
@@ -50,6 +52,17 @@ def inject_global_vars():
     except Exception:
         pass
     return dict(current_user=session.get("user"), nav_courses=nav_courses)
+
+@app.template_filter("render_note")
+def render_note_filter(s):
+    """Safely escapes HTML and renders markdown backticks, bold, and italics for lab notes."""
+    if not s:
+        return ""
+    escaped = str(escape(s))
+    escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
+    escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
+    escaped = re.sub(r"\*([^*]+)\*", r"<em>\1</em>", escaped)
+    return Markup(escaped)
 
 def login_required(f):
     @wraps(f)
@@ -808,6 +821,101 @@ def api_admin_delete_template(template_id):
     db.session.delete(tmpl)
     db.session.commit()
     return jsonify({"success": True, "message": "Template removed from portal."})
+
+# Course Management Endpoints
+@app.route("/api/admin/courses", methods=["GET"])
+@admin_required
+def api_admin_list_courses():
+    """Returns all courses with metadata."""
+    courses = Course.query.order_by(Course.code).all()
+    return jsonify({"success": True, "courses": [c.to_dict() for c in courses]})
+
+@app.route("/api/admin/courses", methods=["POST"])
+@admin_required
+def api_admin_create_course():
+    """Creates a new course."""
+    data = request.get_json() or {}
+    cid = data.get("id", "").strip().lower()
+    code = data.get("code", "").strip().upper()
+    name = data.get("name", "").strip()
+
+    if not cid or not code or not name:
+        return jsonify({"success": False, "error": "id, code, and name are required."}), 400
+
+    if not cid.replace("-", "").replace("_", "").isalnum():
+        return jsonify({"success": False, "error": "Course ID must be alphanumeric (letters, numbers, hyphens, underscores)."}), 400
+
+    if db.session.get(Course, cid):
+        return jsonify({"success": False, "error": f"Course with ID '{cid}' already exists."}), 409
+
+    course = Course(
+        id=cid,
+        code=code,
+        name=name,
+        subtitle=data.get("subtitle", "").strip(),
+        badge=data.get("badge", "").strip(),
+        description=data.get("description", "").strip(),
+        preferred_node=data.get("preferred_node", "pve2").strip(),
+        default_username=data.get("default_username", ".\\Student").strip(),
+        supports_rdp=bool(data.get("supports_rdp", True)),
+        supports_spice=bool(data.get("supports_spice", True)),
+        custom_notes=data.get("custom_notes", "").strip()
+    )
+    db.session.add(course)
+    db.session.commit()
+    return jsonify({"success": True, "course": course.to_dict()}), 201
+
+@app.route("/api/admin/courses/<course_id>", methods=["PUT", "PATCH"])
+@admin_required
+def api_admin_update_course(course_id):
+    """Updates an existing course."""
+    course = db.session.get(Course, course_id.lower())
+    if not course:
+        return jsonify({"success": False, "error": "Course not found."}), 404
+
+    data = request.get_json() or {}
+    if "code" in data and data["code"].strip():
+        course.code = data["code"].strip().upper()
+    if "name" in data and data["name"].strip():
+        course.name = data["name"].strip()
+    if "subtitle" in data:
+        course.subtitle = data["subtitle"].strip()
+    if "badge" in data:
+        course.badge = data["badge"].strip()
+    if "description" in data:
+        course.description = data["description"].strip()
+    if "preferred_node" in data and data["preferred_node"].strip():
+        course.preferred_node = data["preferred_node"].strip()
+    if "default_username" in data and data["default_username"].strip():
+        course.default_username = data["default_username"].strip()
+    if "supports_rdp" in data:
+        course.supports_rdp = bool(data["supports_rdp"])
+    if "supports_spice" in data:
+        course.supports_spice = bool(data["supports_spice"])
+    if "custom_notes" in data:
+        course.custom_notes = data["custom_notes"].strip()
+
+    db.session.commit()
+    return jsonify({"success": True, "course": course.to_dict()})
+
+@app.route("/api/admin/courses/<course_id>", methods=["DELETE"])
+@admin_required
+def api_admin_delete_course(course_id):
+    """Deletes a course if no active student VMs exist."""
+    course = db.session.get(Course, course_id.lower())
+    if not course:
+        return jsonify({"success": False, "error": "Course not found."}), 404
+
+    vms_count = StudentVM.query.filter_by(course_id=course.id).count()
+    if vms_count > 0:
+        return jsonify({
+            "success": False,
+            "error": f"Cannot delete course '{course.code}'. There are currently {vms_count} student VM(s) assigned to this course. Please remove the VMs first."
+        }), 400
+
+    db.session.delete(course)
+    db.session.commit()
+    return jsonify({"success": True, "message": f"Course {course_id} deleted successfully."})
 
 @app.route("/api/admin/vm/<int:vmid>", methods=["DELETE"])
 @admin_required

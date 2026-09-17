@@ -154,6 +154,7 @@
     <!-- Navigation Tabs -->
     <div class="nav-tabs">
         <div class="nav-tab active" onclick="switchTab('fleetTab', this)">Student Fleet Overview</div>
+        <div class="nav-tab" onclick="switchTab('coursesTab', this)">Courses & Notes</div>
         <div class="nav-tab" onclick="switchTab('templatesTab', this)">Course Lab Templates</div>
         <div class="nav-tab" onclick="switchTab('ansibleTab', this)">Ansible & Automation</div>
         <div class="nav-tab" onclick="switchTab('cohortsTab', this)">Student Cohorts & Rosters</div>
@@ -247,11 +248,124 @@
         </div>
     </div>
 
+    <!-- TAB: Courses & Notes -->
+    <div id="coursesTab" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
+            <div>
+                <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0;">
+                    Manage academic courses, connection protocols, default credentials, and editable student lab instructions.
+                </p>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-primary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="openAddCourseModal()">
+                    + Add New Course
+                </button>
+            </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Course Code</th>
+                        <th>Name & Description</th>
+                        <th>Host Node</th>
+                        <th>Access Protocols</th>
+                        <th>Default User</th>
+                        <th>Course Lab Notes Preview</th>
+                        <th>Enrollment</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for c in courses %}
+                    <tr>
+                        <td>
+                            <strong style="color: #fff; font-size: 0.95rem;">{{ c.code }}</strong>
+                            {% if c.badge %}
+                            <span class="badge badge-info" style="display: block; width: fit-content; margin-top: 0.25rem; font-size: 0.75rem;">{{ c.badge }}</span>
+                            {% endif %}
+                            <span style="display: block; font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">/{{ c.id }}</span>
+                        </td>
+                        <td>
+                            <strong>{{ c.name }}</strong>
+                            {% if c.subtitle %}
+                            <span style="display: block; font-size: 0.8rem; color: #94a3b8;">{{ c.subtitle }}</span>
+                            {% endif %}
+                            {% if c.description %}
+                            <span style="display: block; font-size: 0.78rem; color: var(--text-muted); margin-top: 0.2rem; max-width: 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="{{ c.description }}">{{ c.description }}</span>
+                            {% endif %}
+                        </td>
+                        <td><code>{{ c.preferred_node }}</code></td>
+                        <td>
+                            <div style="display: flex; gap: 0.35rem; flex-wrap: wrap;">
+                                {% if c.supports_rdp %}
+                                <span class="badge badge-success" style="font-size: 0.75rem;">RDP</span>
+                                {% endif %}
+                                {% if c.supports_spice %}
+                                <span class="badge badge-info" style="font-size: 0.75rem;">SPICE</span>
+                                {% endif %}
+                                {% if not c.supports_rdp and not c.supports_spice %}
+                                <span class="badge badge-warning" style="font-size: 0.75rem;">Terminal</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <code>{{ c.default_username }}</code>
+                        </td>
+                        <td>
+                            {% if c.custom_notes and c.custom_notes.strip() %}
+                            <div style="font-size: 0.78rem; color: #cbd5e1; max-width: 260px; line-height: 1.4;">
+                                {% for line in c.custom_notes.splitlines()[:2] %}
+                                    {% if line.strip() %}
+                                    <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">&bull; {{ line.strip() }}</div>
+                                    {% endif %}
+                                {% endfor %}
+                                {% if c.custom_notes.splitlines()|length > 2 %}
+                                <span style="font-size: 0.72rem; color: var(--text-muted);">+ {{ c.custom_notes.splitlines()|length - 2 }} more note(s)</span>
+                                {% endif %}
+                            </div>
+                            {% else %}
+                            <span style="font-size: 0.78rem; color: var(--text-muted); font-style: italic;">Standard default notes</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 0.8rem;">
+                                {{ c.enrollments|length }} student(s)
+                            </span>
+                            <span style="display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.2rem;">
+                                {{ c.student_vms|length }} VM(s)
+                            </span>
+                        </td>
+                        <td>
+                            <div style="display: flex; gap: 0.4rem;">
+                                <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" 
+                                    onclick='openEditCourseModal({{ c.to_dict()|tojson }})' title="Edit Course Details & Notes">
+                                    Edit
+                                </button>
+                                <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem; color: #f87171;" 
+                                    onclick="deleteCourse('{{ c.id }}', '{{ c.code }}')" title="Remove Course">
+                                    Delete
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- TAB 2: Course Lab Templates -->
     <div id="templatesTab" style="display: none;">
-        <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1rem;">
-            Published templates are visible to enrolled students for single-click self-service provisioning.
-        </p>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 1rem;">
+            <p style="font-size: 0.9rem; color: var(--text-muted); margin: 0;">
+                Published templates are visible to enrolled students for single-click self-service provisioning.
+            </p>
+            <button class="btn btn-primary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="openAddTemplateModal()">
+                + Add Lab Template
+            </button>
+        </div>
         <div style="overflow-x: auto;">
             <table>
                 <thead>
@@ -550,6 +664,91 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
         </div>
     </div>
 </div>
+
+<!-- Add / Edit Course Modal -->
+<div id="courseModal" class="modal">
+    <div class="modal-content" style="max-width: 650px; max-height: 90vh; overflow-y: auto;">
+        <h2 id="courseModalTitle" style="font-size: 1.3rem; color: #fff; margin-bottom: 0.35rem;">Add New Course</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+            Configure course identity, infrastructure targets, and editable student lab instructions.
+        </p>
+        <form id="courseForm" onsubmit="submitCourseForm(event)">
+            <input type="hidden" id="courseModalMode" value="create">
+            <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Course ID / URL Slug:</label>
+                        <input type="text" id="courseIdInput" required placeholder="e.g. osys3030" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                        <span style="font-size: 0.72rem; color: var(--text-muted);">Lowercase slug used in portal URL: /&lt;id&gt;</span>
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Course Code:</label>
+                        <input type="text" id="courseCodeInput" required placeholder="e.g. OSYS3030" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                    </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Course Name / Title:</label>
+                        <input type="text" id="courseNameInput" required placeholder="e.g. OSYS3030 - Linux Operating Systems" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Badge Label:</label>
+                        <input type="text" id="courseBadgeInput" placeholder="e.g. Ubuntu 26.04" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                    </div>
+                </div>
+
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Subtitle:</label>
+                    <input type="text" id="courseSubtitleInput" placeholder="e.g. Ubuntu Server Clean Install Lab" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                </div>
+
+                <div>
+                    <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Description:</label>
+                    <textarea id="courseDescInput" rows="2" placeholder="Summary of the course and lab environment..." style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;"></textarea>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Preferred Proxmox Node:</label>
+                        <input type="text" id="courseNodeInput" required value="pve2" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                    </div>
+                    <div>
+                        <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Default Student Username:</label>
+                        <input type="text" id="courseDefaultUserInput" value=".\\Student" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 1.5rem;">
+                    <label style="font-size: 0.9rem; color: #e2e8f0; display: flex; align-items: center; gap: 0.4rem;">
+                        <input type="checkbox" id="courseRdpInput" checked> Supports Remote Desktop (RDP)
+                    </label>
+                    <label style="font-size: 0.9rem; color: #e2e8f0; display: flex; align-items: center; gap: 0.4rem;">
+                        <input type="checkbox" id="courseSpiceInput" checked> Supports Virt-Viewer / SPICE
+                    </label>
+                </div>
+
+                <div>
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem;">
+                        <label style="font-size: 0.85rem; color: var(--text-muted);">Course Lab Notes (Student Instructions):</label>
+                        <button type="button" class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.2rem 0.5rem;" onclick="insertDefaultNotesTemplate()">
+                            Load Default Template
+                        </button>
+                    </div>
+                    <textarea id="courseNotesInput" rows="5" placeholder="Enter bullet instructions (one per line)..." style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff; font-family: monospace; font-size: 0.85rem; line-height: 1.5;"></textarea>
+                    <span style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 0.25rem;">
+                        Each line displays as a separate bullet point. Inline markdown backticks <code>`command`</code> and <strong>**bold**</strong> are rendered automatically.
+                    </span>
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.75rem;">
+                <button type="button" class="btn btn-secondary" onclick="closeCourseModal()">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="courseSubmitBtn">Save Course</button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -565,6 +764,7 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
 
     function switchTab(tabId, el) {
         document.getElementById("fleetTab").style.display = "none";
+        document.getElementById("coursesTab").style.display = "none";
         document.getElementById("templatesTab").style.display = "none";
         document.getElementById("ansibleTab").style.display = "none";
         document.getElementById("cohortsTab").style.display = "none";
@@ -861,6 +1061,130 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
             }
         } catch (e) {
             showAdminAlert("Error: " + e.message, "error");
+        }
+    }
+
+    // Course Management Functions
+    function openAddCourseModal() {
+        document.getElementById("courseModalMode").value = "create";
+        document.getElementById("courseModalTitle").innerText = "Add New Course";
+        document.getElementById("courseSubmitBtn").innerText = "Create Course";
+        
+        const idInput = document.getElementById("courseIdInput");
+        idInput.disabled = false;
+        idInput.value = "";
+        document.getElementById("courseCodeInput").value = "";
+        document.getElementById("courseNameInput").value = "";
+        document.getElementById("courseBadgeInput").value = "";
+        document.getElementById("courseSubtitleInput").value = "";
+        document.getElementById("courseDescInput").value = "";
+        document.getElementById("courseNodeInput").value = "pve2";
+        document.getElementById("courseDefaultUserInput").value = ".\\Student";
+        document.getElementById("courseRdpInput").checked = true;
+        document.getElementById("courseSpiceInput").checked = true;
+        
+        insertDefaultNotesTemplate(".\\Student");
+
+        document.getElementById("courseModal").style.display = "flex";
+    }
+
+    function openEditCourseModal(c) {
+        document.getElementById("courseModalMode").value = "edit";
+        document.getElementById("courseModalTitle").innerText = `Edit Course: ${c.code}`;
+        document.getElementById("courseSubmitBtn").innerText = "Save Changes";
+        
+        const idInput = document.getElementById("courseIdInput");
+        idInput.value = c.id;
+        idInput.disabled = true;
+
+        document.getElementById("courseCodeInput").value = c.code || "";
+        document.getElementById("courseNameInput").value = c.name || "";
+        document.getElementById("courseBadgeInput").value = c.badge || "";
+        document.getElementById("courseSubtitleInput").value = c.subtitle || "";
+        document.getElementById("courseDescInput").value = c.description || "";
+        document.getElementById("courseNodeInput").value = c.preferred_node || "pve2";
+        document.getElementById("courseDefaultUserInput").value = c.default_username || "";
+        document.getElementById("courseRdpInput").checked = !!c.supports_rdp;
+        document.getElementById("courseSpiceInput").checked = !!c.supports_spice;
+        
+        if (c.custom_notes && c.custom_notes.trim()) {
+            document.getElementById("courseNotesInput").value = c.custom_notes;
+        } else {
+            insertDefaultNotesTemplate(c.default_username);
+        }
+
+        document.getElementById("courseModal").style.display = "flex";
+    }
+
+    function insertDefaultNotesTemplate(username) {
+        const user = username || document.getElementById("courseDefaultUserInput").value || ".\\Student";
+        const template = `Your VM ID and name are tracked automatically via your NSCC Student ID.
+Virt-Viewer Console: If network or display issues occur, use Virt-Viewer (winget install RedHat.VirtViewer).
+Default Login Username: ${user}`;
+        document.getElementById("courseNotesInput").value = template;
+    }
+
+    function closeCourseModal() {
+        document.getElementById("courseModal").style.display = "none";
+    }
+
+    async function submitCourseForm(e) {
+        e.preventDefault();
+        const mode = document.getElementById("courseModalMode").value;
+        const cid = document.getElementById("courseIdInput").value.trim().toLowerCase();
+        const payload = {
+            id: cid,
+            code: document.getElementById("courseCodeInput").value.trim().toUpperCase(),
+            name: document.getElementById("courseNameInput").value.trim(),
+            badge: document.getElementById("courseBadgeInput").value.trim(),
+            subtitle: document.getElementById("courseSubtitleInput").value.trim(),
+            description: document.getElementById("courseDescInput").value.trim(),
+            preferred_node: document.getElementById("courseNodeInput").value.trim(),
+            default_username: document.getElementById("courseDefaultUserInput").value.trim(),
+            supports_rdp: document.getElementById("courseRdpInput").checked,
+            supports_spice: document.getElementById("courseSpiceInput").checked,
+            custom_notes: document.getElementById("courseNotesInput").value
+        };
+
+        const url = mode === "create" ? "/api/admin/courses" : `/api/admin/courses/${cid}`;
+        const method = mode === "create" ? "POST" : "PUT";
+
+        showAdminAlert(`${mode === "create" ? "Creating" : "Saving"} course ${payload.code}...`, "info");
+
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showAdminAlert(`Course ${data.course.code} saved successfully!`, "success");
+                closeCourseModal();
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showAdminAlert(data.error || "Failed to save course", "error");
+            }
+        } catch (err) {
+            showAdminAlert("Error: " + err.message, "error");
+        }
+    }
+
+    async function deleteCourse(courseId, courseCode) {
+        if (!confirm(`Are you sure you want to delete course '${courseCode}' (${courseId})? This will also remove any templates and student enrollments for this course.`)) return;
+
+        showAdminAlert(`Deleting course ${courseCode}...`, "info");
+        try {
+            const res = await fetch(`/api/admin/courses/${courseId}`, { method: "DELETE" });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showAdminAlert(`Course ${courseCode} deleted.`, "success");
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                showAdminAlert(data.error || "Failed to delete course", "error");
+            }
+        } catch (err) {
+            showAdminAlert("Error: " + err.message, "error");
         }
     }
 </script>

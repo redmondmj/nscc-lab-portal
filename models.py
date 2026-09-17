@@ -16,6 +16,7 @@ class Course(db.Model):
     default_username = db.Column(db.String(64), default=".\\Student")
     supports_rdp = db.Column(db.Boolean, default=True)
     supports_spice = db.Column(db.Boolean, default=True)
+    custom_notes = db.Column(db.Text, default="")
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     templates = db.relationship("LabTemplate", backref="course", lazy=True, cascade="all, delete-orphan")
@@ -31,6 +32,9 @@ class Course(db.Model):
             "description": self.description,
             "preferred_node": self.preferred_node,
             "default_username": self.default_username,
+            "supports_rdp": self.supports_rdp,
+            "supports_spice": self.supports_spice,
+            "custom_notes": self.custom_notes or "",
             "templates": [t.to_dict() for t in self.templates if t.is_published],
             "enrolled_students_count": len(self.enrollments) if hasattr(self, "enrollments") else 0
         }
