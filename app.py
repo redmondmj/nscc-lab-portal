@@ -397,6 +397,36 @@ def api_restart_vm(course_id, vmid):
         logger.error(f"Error rebooting VM: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route("/api/<course_id>/stop/<vmid>", methods=["POST"])
+def api_stop_vm(course_id, vmid):
+    """Gracefully shuts down (or forces stop on) a student VM."""
+    course = db.session.get(Course, course_id.lower())
+
+    proxmox = get_proxmox_client()
+    if not proxmox:
+        return jsonify({"success": False, "error": "Proxmox connection not configured."}), 503
+
+    try:
+        node, real_vmid, _ = find_vm_by_id_or_name(proxmox, vmid, course)
+        if not node:
+            return jsonify({"success": False, "error": f"VM {vmid} not found."}), 404
+
+        current = proxmox.nodes(node).qemu(real_vmid).status.current.get()
+        if current.get("status") == "stopped":
+            return jsonify({"success": True, "message": "VM is already stopped."}), 200
+
+        force = request.args.get("force") == "true"
+        if force:
+            proxmox.nodes(node).qemu(real_vmid).status.stop.post()
+            return jsonify({"success": True, "message": f"VM {real_vmid} power off command issued."}), 200
+        else:
+            proxmox.nodes(node).qemu(real_vmid).status.shutdown.post()
+            return jsonify({"success": True, "message": f"VM {real_vmid} shutdown signal sent."}), 200
+    except Exception as e:
+        logger.error(f"Error stopping VM: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/api/<course_id>/vv/<vmid>", methods=["GET"])
 def api_download_vv(course_id, vmid):
     """Generates and downloads Virt-Viewer (.vv) file for SPICE console."""

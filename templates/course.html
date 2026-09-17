@@ -233,7 +233,10 @@
 
                     <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1rem; pt-3; border-top: 1px solid var(--border); padding-top: 0.75rem;">
                         ${isRunning ? `
-                            <button class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="restartVm(${vm.vmid})">
+                            <button class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="stopVm(${vm.vmid})" title="Power off / shut down your virtual machine">
+                                &#9209; Stop VM
+                            </button>
+                            <button class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="restartVm(${vm.vmid})" title="Reboot virtual machine">
                                 &#8635; Restart
                             </button>
                         ` : `
@@ -353,6 +356,24 @@
             }
         } catch (err) {
             showAlert("Error starting VM: " + err.message, "error");
+        }
+    }
+
+    async function stopVm(vmid) {
+        if (!confirm(`Are you sure you want to stop/shut down VM ${vmid}?`)) return;
+        hideAlert();
+        showAlert(`Sending shutdown command to VM ${vmid}...`, "info");
+        try {
+            const res = await fetch(`/api/${COURSE_ID}/stop/${vmid}`, { method: "POST" });
+            const data = await res.json();
+            if (res.ok) {
+                showAlert("Shutdown command issued. The VM will power down shortly.", "info");
+                setTimeout(loadStudentLabs, 3000);
+            } else {
+                showAlert(data.error || "Failed to stop VM.", "error");
+            }
+        } catch (err) {
+            showAlert("Error stopping VM: " + err.message, "error");
         }
     }
 
