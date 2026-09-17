@@ -61,8 +61,19 @@ def provision_student_vm(proxmox, course, template, user, auto_start=True, full_
     try:
         task_upid = proxmox.nodes(node).qemu(source_vmid).clone.post(**clone_params)
     except Exception as e:
-        logger.error(f"Clone API call failed: {e}")
-        raise RuntimeError(f"Proxmox clone operation failed: {e}")
+        err_msg = str(e)
+        if not full_clone and ("linked clone" in err_msg.lower() or "not supported" in err_msg.lower()):
+            logger.warning(f"Linked clone not supported for template {source_vmid}, retrying as full clone: {err_msg}")
+            clone_params["full"] = 1
+            try:
+                task_upid = proxmox.nodes(node).qemu(source_vmid).clone.post(**clone_params)
+            except Exception as e2:
+                logger.error(f"Full clone fallback API call failed: {e2}")
+                raise RuntimeError(f"Proxmox clone operation failed: {e2}")
+        else:
+            logger.error(f"Clone API call failed: {e}")
+            raise RuntimeError(f"Proxmox clone operation failed: {e}")
+
 
     # 4. Wait for clone task to complete
     success, exitstatus = wait_for_proxmox_task(proxmox, node, task_upid, timeout=240)
