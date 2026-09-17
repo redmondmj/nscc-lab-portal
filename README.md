@@ -4,41 +4,66 @@ Multi-course, self-service cloud portal for NSCC students and faculty to provisi
 
 Built for **OSYS1200 (Operating Systems)** with multi-course support (including **NETW2710**).
 
+> 📘 **Full Architecture Documentation**: For the detailed 8-layer technology stack breakdown, network topology diagrams, and sequence flows, see [**docs/ARCHITECTURE.md**](docs/ARCHITECTURE.md).
+
 ---
 
-## Features
+## Key Features
 
-- **Multi-Course Architecture**:
-  - Modular configuration via `config/courses.json`.
-  - Dedicated landing page for each course (e.g. `/osys1200`, `/netw2710`).
-  - Course-specific branding, instructions, and connection protocols.
-- **Windows Lab Optimized (OSYS1200)**:
-  - Automatic `.rdp` file generation and download with dynamic IP detection via QEMU guest agent.
-  - Virt-Viewer SPICE `.vv` console file generation.
-  - Power management (Start VM, Reboot/Restart VM) with real-time status updates without full page reloads.
-- **Student-Friendly Input**:
-  - Automatically handles student ID formats (e.g., `W01234567` or `1234567`).
-- **Production Container Ready**:
-  - Containerized with Docker & Gunicorn.
-  - Compatible with reverse proxies and Cloudflare Tunnels (`cloudflared`).
+- **Self-Service Student Dashboard**:
+  - One-click VM provisioning with real-time progress indicators.
+  - Power lifecycle controls (Start, Shutdown, Reset) with live status updates.
+- **Dual Remote Connection Options**:
+  - **In-Browser HTML5 Desktop**: Embedded Apache Guacamole client over WebSockets for instant desktop access without client software.
+  - **Direct Native RDP**: Dynamic `.rdp` file generator configured with the VM's live Lab IP for low-latency local Layer 2 connections from physical classroom PCs.
+  - **SPICE Console**: Virt-Viewer `.vv` configuration generation for low-level console diagnostics.
+- **Enterprise Identity & LMS Integration**:
+  - **Microsoft Entra ID (Azure AD)**: Seamless single sign-on with multi-tenant domain hints.
+  - **Brightspace (D2L) LMS Sync**: Automated cohort roster synchronization via `sync_cohorts.py`.
+- **High-Performance Infrastructure**:
+  - **Ceph Distributed Storage**: Instant linked cloning (< 10 seconds), shared templates across nodes, and live migration.
+  - **UniFi VLAN Segmentation**: Isolated `Prod` (VLAN 10) and `Lab` (VLAN 20) networks with 802.1Q tagged trunks and optimized local routing.
+  - **Ansible Automation**: Automated golden template preparation (`ansible/`) over WinRM HTTPS.
+
+---
+
+## Technology Stack Summary
+
+| Layer | Technologies |
+| :--- | :--- |
+| **Frontend** | Modern HTML5/CSS3, Jinja2 Templates, Apache Guacamole JS |
+| **Backend** | Python 3.11, Flask, SQLAlchemy (SQLite ORM), MSAL |
+| **Remote Gateway** | Apache Guacamole (`guacd`), Custom Async Python Guac-Bridge |
+| **Virtualization** | Proxmox VE 9.2.x Cluster (`pve`, `pve2`), `proxmoxer` API |
+| **Storage** | Ceph Distributed Storage (`Ceph_VM_Storage` RBD pool) |
+| **Networking** | UniFi USW-48 / USW-Aggregation, VLANs (10, 20), 802.1Q Trunks |
+| **Configuration** | Ansible, WinRM HTTPS (5986), PowerShell |
+| **Deployment** | Docker & Docker Compose, Traefik Reverse Proxy |
 
 ---
 
 ## Configuration
 
-Copy `.env.example` to `.env` and configure your Proxmox credentials:
+Copy `.env.example` to `.env` and configure your credentials:
 
 ```bash
+# Proxmox Cluster Settings
 PROXMOX_HOST=10.10.0.11
 PROXMOX_API_USER=root@pam
 PROXMOX_API_TOKEN_ID=getvm
-PROXMOX_API_TOKEN_SECRET=your-secret-uuid
+PROXMOX_API_TOKEN_SECRET=your-token-secret
 PROXMOX_SPICE_PORT=3128
+
+# Entra ID (Azure AD) Authentication
+ENTRA_CLIENT_ID=your-client-id
+ENTRA_CLIENT_SECRET=your-client-secret
+ENTRA_TENANT_ID=your-tenant-id
+REDIRECT_URI=https://labs.nscctruro.ca/auth/callback
 ```
 
-### Adding or Modifying Courses
+### Course Configuration
 
-Edit `config/courses.json`:
+Courses and templates are defined modularly in `config/courses.json`:
 
 ```json
 {
@@ -60,34 +85,39 @@ Edit `config/courses.json`:
 
 ---
 
-## Quickstart (Local Development)
+## Template Preparation (Ansible)
+
+To prepare a new Windows VM before converting it to a Proxmox template, see the instructions in the [**`ansible/`**](ansible/README.md) directory:
 
 ```bash
-# Create virtual environment
-python -m venv venv
-.\venv\Scripts\activate   # (Linux: source venv/bin/activate)
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Run development server
-python app.py
+# Inside the VM: run Bootstrap-WinRM-Ansible.ps1
+# On the Ansible control node:
+cd ansible
+cp hosts.yml.example hosts.yml
+ansible-playbook vm-template-prep.yml -l osys1200-template-2002 -k
 ```
-
-Visit [http://localhost:5000](http://localhost:5000).
 
 ---
 
-## Deployment via Docker
+## Deployment (Docker Compose)
+
+On the production Docker host (`10.10.0.103`):
 
 ```bash
-# Build and run with docker-compose
-docker compose up -d --build
+# Clone or pull latest repository
+cd ~/proxmox-getvm-app
+git pull
+
+# Build and launch multi-container stack
+sudo docker compose build proxmox-app
+sudo docker compose up -d
 ```
 
-Or manually:
+---
 
-```bash
-docker build -t proxmox-getvm-app .
-docker run -d -p 80:5000 --name proxmox-app --env-file .env --restart unless-stopped proxmox-getvm-app
-```
+## Repository & Security Hygiene
+
+This project enforces strict privacy and PII protection protocols:
+* No hardcoded passwords, tokens, or personal identifiers in code or commit history.
+* Live inventories (`hosts.yml`), secrets (`.env`), and session databases are gitignored.
+* Follows conventional commits (`feat:`, `fix:`, `docs:`, `chore:`).
