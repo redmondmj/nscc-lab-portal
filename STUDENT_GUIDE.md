@@ -10,11 +10,13 @@ Welcome to the **NSCC Virtual Lab Portal**! This portal provides dedicated, high
 If you are working from your personal laptop, home network, or campus Wi-Fi, you need the Cloudflare Zero Trust (WARP) client to route securely to your private lab VM:
 
 1. **Download & Install Cloudflare WARP**:
-   - Visit [**https://one.dash.cloudflare.com**](https://one.dash.cloudflare.com) or [**https://1.1.1.1**](https://1.1.1.1) and download the client for Windows, macOS, or Linux.
+   - **PC / Mac / Linux**: Visit [**https://one.dash.cloudflare.com**](https://one.dash.cloudflare.com) or [**https://1.1.1.1**](https://1.1.1.1) and download the client.
+   - **Android / ChromeOS**:
+     - *Method 1 (Recommended)*: Install **"Cloudflare One"** from the Google Play Store (this is the enterprise Zero Trust client and immediately prompts for your team name).
+     - *Method 2 (If using standard "1.1.1.1" app)*: Open the app &rarr; tap the **Menu (☰)** in the top right &rarr; tap **Account** &rarr; select **Login with Cloudflare Zero Trust** (or *Switch Account*).
+   - **iOS / iPadOS**: Install **Cloudflare One** or **1.1.1.1** from the Apple App Store.
 2. **Connect to the Institutional Organization**:
-   - Open the Cloudflare WARP app on your device.
-   - Go to **Settings (Gear icon) &rarr; Account &rarr; Login with Cloudflare Zero Trust**.
-   - When prompted for your team name, enter:
+   - When prompted for your team name / organization, enter:
      ```text
      nscctruro
      ```
@@ -103,3 +105,13 @@ You have two convenient ways to interact with your VM:
   - Ensure you are signing in with your **`@nscctruro.ca`** account, rather than a personal Microsoft account.
 - **"My course page says I have no enrolled courses"**:
   - Notify your instructor so they can verify your account is assigned to your course cohort in the Admin console.
+
+---
+
+## Need Help? In-Portal Bug Reporting & Feedback
+
+Encountered an issue, black screen, or have an idea for an enhancement?
+- Click the floating **💬 Report Issue / Feedback** button in the bottom-right corner of the portal.
+- Select **Bug Report**, **Feature Request**, or **Feedback**.
+- The form automatically attaches helpful diagnostic details (screen resolution, browser, page URL).
+- You can submit directly to faculty with **Send to Faculty**, or use **📋 Copy Markdown** to paste a pre-formatted report directly into Microsoft Teams or an email to your instructor.
