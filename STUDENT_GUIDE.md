@@ -10,16 +10,27 @@ Welcome to the **NSCC Virtual Lab Portal**! This portal provides dedicated, high
 If you are working from your personal laptop, home network, or campus Wi-Fi, you need the Cloudflare Zero Trust (WARP) client to route securely to your private lab VM:
 
 1. **Download & Install Cloudflare Client**:
-   - **PC / Mac / Linux (Laptops & Desktops)**:
-     - Download the desktop client from [**https://one.dash.cloudflare.com**](https://one.dash.cloudflare.com) or [**https://1.1.1.1**](https://1.1.1.1).
-     - After installing, open the app, go to **Settings (Gear icon) &rarr; Account &rarr; Login with Cloudflare Zero Trust**.
+   - **Windows (Laptops & Desktops)**:
+     - **Fastest (Command Line)**: Open PowerShell or Terminal and run:
+       ```powershell
+       winget install Cloudflare.Warp
+       ```
+     - **Direct Web Installer**: Download from [**https://1.1.1.1**](https://1.1.1.1).
+     - *(Note: On desktop, the 1.1.1.1 and Cloudflare One installers install the identical client).*
+   - **macOS**:
+     - **Homebrew**: Run `brew install --cask cloudflare-warp`
+     - **Direct Web Installer**: Download the `.pkg` from [**https://1.1.1.1**](https://1.1.1.1).
+   - **Linux**:
+     - Follow the official repository setup at [**Cloudflare Linux Package Guide**](https://pkg.cloudflareclient.com/).
    - **Android / Chromebooks / Tablets**:
-     - ⚠️ **Important**: Do **not** install the standard consumer *"1.1.1.1: Faster Internet"* app—Cloudflare has removed organizational logins from that version.
-     - Install the dedicated enterprise client: **[Cloudflare One Agent](https://play.google.com/store/apps/details?id=com.cloudflare.cloudflareoneagent&hl=en)** from Google Play.
-     - Upon opening the app, tap **Next** and accept the terms. It will immediately prompt you for your organization team name.
+     - ⚠️ **Important**: Do **not** install the consumer *"1.1.1.1: Faster Internet"* app on mobile—Cloudflare removed organizational logins from that build.
+     - Install the dedicated enterprise app: **[Cloudflare One Agent](https://play.google.com/store/apps/details?id=com.cloudflare.cloudflareoneagent&hl=en)** from Google Play.
+     - Upon opening the app, tap **Next** and accept terms. It will immediately prompt you for your team name.
    - **iOS / iPadOS**:
      - Install **Cloudflare One** from the Apple App Store.
 2. **Connect to the Institutional Organization**:
+   - **On Desktop (Windows / macOS)**: Open the WARP client &rarr; click **Settings (Gear icon) &rarr; Account / Preferences &rarr; Login with Cloudflare Zero Trust**.
+   - **On Mobile**: The app automatically prompts for your organization on first launch.
    - When prompted for your team name / organization, enter:
      ```text
      nscctruro
