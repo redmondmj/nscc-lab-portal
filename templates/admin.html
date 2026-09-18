@@ -592,9 +592,12 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
                         <input type="text" id="modalPass" placeholder="e.g. Learn2=work=machine (or blank to inherit)" style="width: 100%; padding: 0.65rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff;">
                     </div>
                 </div>
-                <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem;">
+                <div style="display: flex; gap: 1.5rem; margin-top: 0.5rem; flex-wrap: wrap;">
                     <label style="font-size: 0.9rem; color: #e2e8f0; display: flex; align-items: center; gap: 0.4rem;">
                         <input type="checkbox" id="modalRdp" checked> Enable RDP (Windows)
+                    </label>
+                    <label style="font-size: 0.9rem; color: #e2e8f0; display: flex; align-items: center; gap: 0.4rem;" title="Enable virtual optical drive (ISO Mount & Eject) controls for students on this lab">
+                        <input type="checkbox" id="modalCdrom"> Enable Optical Drive (ISO Mount/Eject)
                     </label>
                     <label style="font-size: 0.9rem; color: #e2e8f0; display: flex; align-items: center; gap: 0.4rem;">
                         <input type="checkbox" id="modalPublish" checked> Publish Immediately
@@ -1016,6 +1019,7 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
         document.getElementById("modalUser").value = ".\\Student";
         document.getElementById("modalPass").value = "";
         document.getElementById("modalRdp").checked = true;
+        document.getElementById("modalCdrom").checked = false;
         document.getElementById("modalPublish").checked = true;
 
         document.getElementById("addTemplateModal").style.display = "flex";
@@ -1040,6 +1044,7 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
         document.getElementById("modalUser").value = tmpl.default_username || "";
         document.getElementById("modalPass").value = tmpl.default_password || "";
         document.getElementById("modalRdp").checked = !!tmpl.supports_rdp;
+        document.getElementById("modalCdrom").checked = !!tmpl.supports_cdrom;
         document.getElementById("modalPublish").checked = !!tmpl.is_published;
 
         document.getElementById("addTemplateModal").style.display = "flex";
@@ -1063,6 +1068,7 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
             default_username: document.getElementById("modalUser").value.trim(),
             default_password: document.getElementById("modalPass").value.trim() || null,
             supports_rdp: document.getElementById("modalRdp").checked,
+            supports_cdrom: document.getElementById("modalCdrom").checked,
             is_published: document.getElementById("modalPublish").checked
         };
 

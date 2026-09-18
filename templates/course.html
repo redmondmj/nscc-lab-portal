@@ -275,37 +275,45 @@
                 </button>
             </div>
         </div>
-        {% else %}
-        <div style="margin-bottom: 1.25rem; padding-bottom: 1.25rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
-            <div>
-                <strong style="color: #fff; font-size: 0.95rem; display: block;">Instant Access with Microsoft 365</strong>
-                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.2rem;">Sign in with your NSCC account to load and manage your lab VMs with 1-click.</p>
+
+        {% if current_user.role in ['instructor', 'admin'] %}
+        <!-- Instructor Fleet Tools: Quick Student Inspection -->
+        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                <span style="font-size: 0.78rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; display: flex; align-items: center; gap: 0.35rem;">
+                    <span>👨‍🏫</span> Faculty Tool: Inspect Student Lab
+                </span>
+                <button class="btn-copy-chip" onclick="resetToMyLabs()" style="font-size: 0.75rem;">Back to My Labs</button>
             </div>
-            <a href="/login?next={{ request.path }}" class="btn btn-primary" style="font-size: 0.85rem; padding: 0.5rem 1rem; text-decoration: none; gap: 0.5rem; white-space: nowrap;">
-                <svg width="14" height="14" viewBox="0 0 23 23" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <div style="display: flex; gap: 0.5rem;">
+                <input type="text" id="instructorStudentInput" placeholder="Enter student ID or username (e.g. W0123456 or first.last)"
+                       style="flex: 1; padding: 0.6rem 0.85rem; border-radius: 6px; border: 1px solid var(--border); background: #0f172a; color: #fff; font-size: 0.9rem; font-family: monospace;">
+                <button class="btn btn-secondary" onclick="inspectStudentLab()" style="padding: 0.6rem 1rem; font-size: 0.85rem; white-space: nowrap;">
+                    Inspect Labs
+                </button>
+            </div>
+            <div id="inspectedStudentBanner" style="display: none; margin-top: 0.75rem; padding: 0.5rem 0.75rem; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 6px; font-size: 0.82rem; color: #38bdf8;"></div>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <!-- Unauthenticated Access Card -->
+        <div style="text-align: center; padding: 1.5rem 1rem;">
+            <div style="font-size: 2.25rem; margin-bottom: 0.5rem;">🔒</div>
+            <strong style="color: #fff; font-size: 1.15rem; display: block; margin-bottom: 0.35rem;">Instant Access with Microsoft 365</strong>
+            <p style="font-size: 0.88rem; color: var(--text-muted); max-width: 480px; margin: 0 auto 1.35rem auto; line-height: 1.45;">
+                Sign in with your <strong>nscctruro.ca</strong> account to load and manage your course lab environments with 1-click.
+            </p>
+            <a href="/login?next={{ request.path }}" class="btn btn-primary" style="display: inline-flex; align-items: center; gap: 0.6rem; padding: 0.65rem 1.35rem; font-size: 0.92rem; font-weight: 600; text-decoration: none;">
+                <svg width="16" height="16" viewBox="0 0 23 23" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <rect width="10.5" height="10.5" fill="#F25022"/>
                     <rect x="12.5" width="10.5" height="10.5" fill="#7FBA00"/>
                     <rect y="12.5" width="10.5" height="10.5" fill="#00A4EF"/>
                     <rect x="12.5" y="12.5" width="10.5" height="10.5" fill="#FFB900"/>
                 </svg>
-                <span>Sign in with Microsoft</span>
+                <span>Sign in with Microsoft (@nscctruro.ca)</span>
             </a>
         </div>
-        <label for="studentId" style="display: block; font-weight: 600; font-size: 0.92rem; margin-bottom: 0.5rem; color: #cbd5e1;">
-            Or manually enter your Student Account (first.last):
-        </label>
-        <div style="display: flex; gap: 0.75rem;">
-            <input type="text" id="studentId" placeholder="e.g. first.last (or W0123456)" 
-                   style="flex: 1; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border); background: #0f172a; color: #fff; font-size: 1rem; font-family: monospace;"
-                   autofocus>
-            <button id="btnCheckStatus" class="btn btn-secondary" onclick="loadStudentLabs()">
-                <span id="checkSpinner" class="spinner" style="display: none;"></span>
-                <span>Load Labs</span>
-            </button>
-        </div>
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.6rem;">
-            Enter your student username (first.last) or ID to view your provisioned VMs or deploy published lab templates.
-        </p>
         {% endif %}
     </div>
 
@@ -378,18 +386,21 @@
         return raw.trim().toUpperCase();
     }
 
-    const studentInput = document.getElementById("studentId");
-    if (studentInput) {
-        studentInput.addEventListener("keypress", function(e) {
-            if (e.key === "Enter") {
-                loadStudentLabs();
-            }
-        });
-    }
+    const myAccountId = "{{ current_user.id if current_user else '' }}";
 
     window.addEventListener("DOMContentLoaded", function() {
-        if (studentInput && studentInput.value.trim()) {
-            loadStudentLabs();
+        if (myAccountId) {
+            currentStudentId = myAccountId;
+            loadStudentLabs(myAccountId);
+        }
+
+        const instInput = document.getElementById("instructorStudentInput");
+        if (instInput) {
+            instInput.addEventListener("keypress", function(e) {
+                if (e.key === "Enter") {
+                    inspectStudentLab();
+                }
+            });
         }
     });
 
@@ -405,18 +416,44 @@
         document.getElementById("alertBox").style.display = "none";
     }
 
-    async function loadStudentLabs() {
-        const rawInput = document.getElementById("studentId").value;
-        const studentId = sanitizeId(rawInput);
-        if (!studentId) {
-            showAlert("Please enter a valid student ID number.", "error");
+    function inspectStudentLab() {
+        const inp = document.getElementById("instructorStudentInput");
+        if (!inp || !inp.value.trim()) {
+            showAlert("Please enter a student username or ID to inspect.", "error");
             return;
         }
+        const sid = sanitizeId(inp.value.trim());
+        const banner = document.getElementById("inspectedStudentBanner");
+        if (banner) {
+            banner.innerHTML = `Viewing Student Lab Environment: <strong>${sid}</strong> (Faculty Mode)`;
+            banner.style.display = "block";
+        }
+        loadStudentLabs(sid);
+    }
+
+    function resetToMyLabs() {
+        if (!myAccountId) return;
+        const banner = document.getElementById("inspectedStudentBanner");
+        if (banner) banner.style.display = "none";
+        const inp = document.getElementById("instructorStudentInput");
+        if (inp) inp.value = "";
+        loadStudentLabs(myAccountId);
+    }
+
+    async function loadStudentLabs(targetId = null) {
+        let studentId = targetId || currentStudentId || myAccountId;
+        if (!studentId) {
+            const sidEl = document.getElementById("studentId");
+            if (sidEl) studentId = sanitizeId(sidEl.value);
+        }
+        if (!studentId) return;
 
         currentStudentId = studentId;
         hideAlert();
-        document.getElementById("checkSpinner").style.display = "inline-block";
-        document.getElementById("btnCheckStatus").disabled = true;
+        const checkSpinner = document.getElementById("checkSpinner");
+        const btnCheckStatus = document.getElementById("btnCheckStatus");
+        if (checkSpinner) checkSpinner.style.display = "inline-block";
+        if (btnCheckStatus) btnCheckStatus.disabled = true;
 
         try {
             // 1. Fetch published templates
@@ -434,8 +471,8 @@
         } catch (err) {
             showAlert("Failed to communicate with portal backend: " + err.message, "error");
         } finally {
-            document.getElementById("checkSpinner").style.display = "none";
-            document.getElementById("btnCheckStatus").disabled = false;
+            if (checkSpinner) checkSpinner.style.display = "none";
+            if (btnCheckStatus) btnCheckStatus.disabled = false;
         }
     }
 
@@ -474,6 +511,7 @@
                 const isLinux = ((vm.os_type === 'linux') || ('{{ course.os_type }}' === 'linux') || (!{{ 'true' if course.supports_rdp else 'false' }}));
                 const rawUser = vm.default_username || "{{ course.default_username or 'student' }}";
                 const sshUser = rawUser.replace(/^\\*\\/, "") || "student";
+                const showCdrom = Boolean(vm.supports_cdrom || (vm.cdrom && vm.cdrom.has_media));
 
                 const card = document.createElement("div");
                 card.className = "vm-card";
@@ -511,6 +549,7 @@
                         </div>
                     </div>
 
+                    ${showCdrom ? `
                     <!-- Virtual Optical Drive (CD/DVD) -->
                     <div class="vm-cdrom-strip">
                         <div style="display: flex; align-items: center; gap: 0.5rem; overflow: hidden;">
@@ -538,6 +577,7 @@
                             `}
                         </div>
                     </div>
+                    ` : ''}
 
                     <!-- Connection Actions (Primary) -->
                     <div class="vm-connect-actions">

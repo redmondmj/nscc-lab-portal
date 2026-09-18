@@ -19,6 +19,10 @@ def seed_database(app):
                     conn.execute(db.text("ALTER TABLE lab_templates ADD COLUMN default_password VARCHAR(128)"))
                     conn.commit()
                     logger.info("Migrated lab_templates table: added default_password column.")
+                if "supports_cdrom" not in tmpl_cols:
+                    conn.execute(db.text("ALTER TABLE lab_templates ADD COLUMN supports_cdrom BOOLEAN DEFAULT 0"))
+                    conn.commit()
+                    logger.info("Migrated lab_templates table: added supports_cdrom column.")
 
                 user_cols = [row[1] for row in conn.execute(db.text("PRAGMA table_info(users)")).fetchall()]
                 if "cohort" not in user_cols:
@@ -76,6 +80,8 @@ def seed_database(app):
                         template_vmid=tmpl_vmid
                     ).first()
 
+                    is_linux = (cdata.get("os_type") == "linux")
+                    supports_cdrom_val = bool(cdata.get("supports_cdrom", is_linux))
                     if not existing_tmpl:
                         new_tmpl = LabTemplate(
                             course_id=course.id,
@@ -86,14 +92,17 @@ def seed_database(app):
                             os_type=cdata.get("os_type", "windows"),
                             supports_rdp=cdata.get("supports_rdp", True),
                             supports_spice=cdata.get("supports_spice", True),
+                            supports_cdrom=supports_cdrom_val,
                             preferred_node=cdata.get("preferred_node", "pve2"),
                             default_username=cdata.get("default_username", ".\\Student"),
                             default_password=cdata.get("default_password"),
                             is_published=True
                         )
                         db.session.add(new_tmpl)
-                    elif not existing_tmpl.default_password and cdata.get("default_password"):
-                        existing_tmpl.default_password = cdata.get("default_password")
+                    else:
+                        existing_tmpl.supports_cdrom = supports_cdrom_val
+                        if not existing_tmpl.default_password and cdata.get("default_password"):
+                            existing_tmpl.default_password = cdata.get("default_password")
 
             # Seed default course enrollments based on student cohort and active VMs
             for user in User.query.all():

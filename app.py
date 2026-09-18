@@ -961,6 +961,7 @@ def api_admin_add_template():
         os_type=data.get("os_type", "windows"),
         supports_rdp=data.get("supports_rdp", True),
         supports_spice=True,
+        supports_cdrom=bool(data.get("supports_cdrom", False)),
         preferred_node=data.get("preferred_node", "pve2"),
         default_username=data.get("default_username", ".\\Student"),
         default_password=data.get("default_password") or None,
@@ -1000,6 +1001,8 @@ def api_admin_update_template(template_id):
         tmpl.supports_rdp = bool(data["supports_rdp"])
     if "supports_spice" in data:
         tmpl.supports_spice = bool(data["supports_spice"])
+    if "supports_cdrom" in data:
+        tmpl.supports_cdrom = bool(data["supports_cdrom"])
 
     db.session.commit()
     return jsonify({"success": True, "template": tmpl.to_dict(include_sensitive=True)})

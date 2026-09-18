@@ -51,6 +51,7 @@ class LabTemplate(db.Model):
     os_type = db.Column(db.String(32), default="windows")  # 'windows' or 'linux'
     supports_rdp = db.Column(db.Boolean, default=True)
     supports_spice = db.Column(db.Boolean, default=True)
+    supports_cdrom = db.Column(db.Boolean, default=False)
     preferred_node = db.Column(db.String(64), default="pve2")
     default_username = db.Column(db.String(64), default=".\\Student")
     default_password = db.Column(db.String(128), nullable=True)
@@ -70,6 +71,7 @@ class LabTemplate(db.Model):
             "os_type": self.os_type,
             "supports_rdp": self.supports_rdp,
             "supports_spice": self.supports_spice,
+            "supports_cdrom": self.supports_cdrom,
             "preferred_node": self.preferred_node,
             "default_username": self.default_username,
             "is_published": self.is_published
@@ -149,5 +151,6 @@ class StudentVM(db.Model):
             "node": self.node,
             "status": self.status,
             "ip": self.last_ip,
-            "created_at": self.created_at.isoformat() if self.created_at else None
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "supports_cdrom": self.template.supports_cdrom if self.template else False
         }
