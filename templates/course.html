@@ -424,28 +424,10 @@
             const tmplData = await tmplRes.json();
             publishedTemplates = tmplData.templates || [];
 
-            // 2. Fetch student's provisioned VMs
+            // 2. Fetch student's provisioned VMs (includes DB and discovered cluster VMs)
             const vmRes = await fetch(`/api/${COURSE_ID}/student/${studentId}/vms`);
             const vmData = await vmRes.json();
             studentVms = vmData.vms || [];
-
-            // 3. Fallback check: If no registered DB VMs, check by ID or legacy name
-            if (studentVms.length === 0) {
-                const legacyRes = await fetch(`/api/${COURSE_ID}/status/${studentId}`);
-                if (legacyRes.ok) {
-                    const lData = await legacyRes.json();
-                    if (lData.found) {
-                        studentVms.push({
-                            vmid: lData.vmid,
-                            name: lData.name,
-                            node: lData.node,
-                            status: lData.status,
-                            ip: lData.ip,
-                            template_name: "Enrolled Course VM"
-                        });
-                    }
-                }
-            }
 
             renderDashboard();
 

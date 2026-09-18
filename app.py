@@ -121,16 +121,18 @@ def find_vm_by_id_or_name(proxmox, student_or_vmid, course=None):
     # 2. Match VM name containing the student ID and course code
     for vm in all_resources:
         name = str(vm.get("name", ""))
-        if vmid_str in name and vm.get("type") == "qemu":
-            if course and course.code.lower() in name.lower():
-                return vm.get("node"), str(vm.get("vmid")), vm
-            elif not course:
+        if vmid_str.lower() in name.lower() and vm.get("type") == "qemu":
+            if course:
+                if course.code.lower() in name.lower():
+                    return vm.get("node"), str(vm.get("vmid")), vm
+            else:
                 return vm.get("node"), str(vm.get("vmid")), vm
 
-    # 3. Secondary pass on any qemu name match
-    for vm in all_resources:
-        if vmid_str in str(vm.get("name", "")) and vm.get("type") == "qemu":
-            return vm.get("node"), str(vm.get("vmid")), vm
+    # 3. Secondary pass ONLY if course is not specified (course-agnostic search)
+    if not course:
+        for vm in all_resources:
+            if vmid_str.lower() in str(vm.get("name", "")).lower() and vm.get("type") == "qemu":
+                return vm.get("node"), str(vm.get("vmid")), vm
 
     return None, None, None
 
@@ -270,10 +272,45 @@ def api_student_vms(course_id, student_id):
         StudentVM.user_id.in_(candidate_ids)
     ).all()
     
-    # Also check if student has any VM discovered by ID matching
-    result = []
+    known_vmids = {vm.vmid for vm in vms}
     proxmox = get_proxmox_client()
 
+    # Discover any uncataloged cluster VMs matching this student and course
+    if proxmox:
+        try:
+            all_resources = proxmox.cluster.resources.get(type="vm")
+            user_to_assign = User.query.get(clean_id) or User.query.filter_by(id=clean_id.lower()).first()
+            tmpl = LabTemplate.query.filter_by(course_id=course.id).first()
+
+            for vm_res in all_resources:
+                if vm_res.get("type") != "qemu":
+                    continue
+                v_vmid = vm_res.get("vmid")
+                if not v_vmid or v_vmid in known_vmids:
+                    continue
+                v_name = str(vm_res.get("name", ""))
+                # Strict check: Must belong to this course
+                if course.code.lower() not in v_name.lower():
+                    continue
+                # Must match student candidate ID in VM name
+                matched = any(cid.lower() in v_name.lower() for cid in candidate_ids)
+                if matched:
+                    new_record = StudentVM(
+                        user_id=user_to_assign.id if user_to_assign else clean_id,
+                        course_id=course.id,
+                        template_id=tmpl.id if tmpl else 1,
+                        vmid=v_vmid,
+                        name=v_name,
+                        node=vm_res.get("node", "pve")
+                    )
+                    db.session.add(new_record)
+                    db.session.commit()
+                    vms.append(new_record)
+                    known_vmids.add(v_vmid)
+        except Exception as de:
+            logger.warning(f"Error auto-discovering cluster VMs in api_student_vms: {de}")
+
+    result = []
     for vm in vms:
         vm_data = vm.to_dict()
         if proxmox:

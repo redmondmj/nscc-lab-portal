@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
-from app import app, db
+from app import app, db, find_vm_by_id_or_name
+from models import StudentVM, User, Course, LabTemplate
 
 class TestProxmoxApp(unittest.TestCase):
     def setUp(self):
@@ -503,6 +504,63 @@ class TestProxmoxApp(unittest.TestCase):
         mock_p.nodes("pve2").qemu("2002").config.post.assert_called_with(
             ide2="local:iso/ubuntu-26.04.1.iso,media=cdrom", boot="order=ide2;scsi0;net0"
         )
+
+    def test_course_vm_isolation_and_multiple_vms(self):
+        """Verify student VMs are strictly isolated by course and multiple VMs are returned."""
+        with app.app_context():
+            # Create user and ensure courses exist
+            u = User.query.get("W0777777")
+            if not u:
+                u = User(id="W0777777", name="Multi VM Student", role="student")
+                db.session.add(u)
+                db.session.commit()
+
+            c_osys = db.session.get(Course, "osys1200")
+            c_other = db.session.get(Course, "osys3030")
+            if not c_other:
+                c_other = Course(id="osys3030", code="OSYS3030", name="Network Linux", os_type="linux")
+                db.session.add(c_other)
+                db.session.commit()
+
+            tmpl = LabTemplate.query.filter_by(course_id="osys1200").first()
+
+            # Clean any old test records
+            StudentVM.query.filter_by(user_id="W0777777").delete()
+            db.session.commit()
+
+            # Add two VMs for osys1200
+            vm1 = StudentVM(user_id="W0777777", course_id="osys1200", template_id=tmpl.id, vmid=7001, name="OSYS1200-W0777777-Lab1", node="pve")
+            vm2 = StudentVM(user_id="W0777777", course_id="osys1200", template_id=tmpl.id, vmid=7002, name="OSYS1200-W0777777-Lab2", node="pve")
+            # Add one VM for osys3030
+            vm3 = StudentVM(user_id="W0777777", course_id="osys3030", template_id=tmpl.id, vmid=7003, name="OSYS3030-W0777777-Lab1", node="pve")
+            db.session.add_all([vm1, vm2, vm3])
+            db.session.commit()
+
+        # Query osys1200 student VMs endpoint
+        res = self.client.get("/api/osys1200/student/W0777777/vms")
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        returned_vmids = [v["vmid"] for v in data["vms"]]
+
+        # Must return both osys1200 VMs (multiple VMs supported)
+        self.assertEqual(len(data["vms"]), 2)
+        self.assertIn(7001, returned_vmids)
+        self.assertIn(7002, returned_vmids)
+
+        # Must NOT leak the osys3030 VM into osys1200
+        self.assertNotIn(7003, returned_vmids)
+
+        # Test find_vm_by_id_or_name course isolation
+        with app.app_context():
+            c_osys = db.session.get(Course, "osys1200")
+            mock_p = MagicMock()
+            mock_p.cluster.resources.get.return_value = [
+                {"vmid": 7003, "node": "pve", "name": "OSYS3030-W0777777-Lab1", "type": "qemu"}
+            ]
+            # When querying under osys1200, matching a student ID should NOT match a VM belonging to osys3030
+            node, real_vmid, _ = find_vm_by_id_or_name(mock_p, "W0777777", course=c_osys)
+            self.assertIsNone(node)
+            self.assertIsNone(real_vmid)
 
 if __name__ == "__main__":
     unittest.main()
