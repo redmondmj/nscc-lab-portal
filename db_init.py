@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from pathlib import Path
-from models import db, Course, LabTemplate, User, StudentVM, Enrollment
+from models import db, Course, LabTemplate, User, StudentVM, Enrollment, FeedbackReport
 
 logger = logging.getLogger(__name__)
 

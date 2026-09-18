@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from app import app, db, find_vm_by_id_or_name
-from models import StudentVM, User, Course, LabTemplate
+from models import StudentVM, User, Course, LabTemplate, FeedbackReport
 
 class TestProxmoxApp(unittest.TestCase):
     def setUp(self):
@@ -561,6 +561,71 @@ class TestProxmoxApp(unittest.TestCase):
             node, real_vmid, _ = find_vm_by_id_or_name(mock_p, "W0777777", course=c_osys)
             self.assertIsNone(node)
             self.assertIsNone(real_vmid)
+
+    def test_feedback_flow(self):
+        """Test user feedback submission, admin inspection, triage updates, and deletion."""
+        # 1. Validation error on empty title/description
+        res = self.client.post("/api/feedback", json={
+            "title": "",
+            "description": ""
+        })
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(res.get_json()["success"])
+
+        # 2. Successful submission as user
+        res = self.client.post("/api/feedback", json={
+            "type": "bug",
+            "category": "guacamole_console",
+            "title": "Black screen on console connect",
+            "description": "When opening Guacamole console, screen remains black for 30 seconds.",
+            "url": "http://localhost:5000/osys1200",
+            "user_agent": "Mozilla/5.0 TestBrowser",
+            "screen_resolution": "1920x1080",
+            "user_id": "W0123456",
+            "user_name": "Test Student"
+        })
+        self.assertEqual(res.status_code, 201)
+        data = res.get_json()
+        self.assertTrue(data["success"])
+        report_id = data["report"]["id"]
+        self.assertEqual(data["report"]["status"], "open")
+        self.assertEqual(data["report"]["title"], "Black screen on console connect")
+
+        # 3. Non-admin accessing admin feedback endpoint is unauthorized / redirected
+        res_unauth = self.client.get("/api/admin/feedback")
+        self.assertIn(res_unauth.status_code, [302, 401, 403])
+
+        # 4. Admin accessing feedback endpoint
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "instructor1", "name": "Prof Smith", "role": "instructor"}
+
+        res_admin = self.client.get("/api/admin/feedback")
+        self.assertEqual(res_admin.status_code, 200)
+        admin_data = res_admin.get_json()
+        self.assertTrue(admin_data["success"])
+        self.assertGreaterEqual(admin_data["total"], 1)
+        self.assertTrue(any(r["id"] == report_id for r in admin_data["reports"]))
+
+        # 5. Admin updating status & notes
+        res_patch = self.client.patch(f"/api/admin/feedback/{report_id}", json={
+            "status": "in_progress",
+            "admin_notes": "Investigating Guacamole session timeouts"
+        })
+        self.assertEqual(res_patch.status_code, 200)
+        patch_data = res_patch.get_json()
+        self.assertTrue(patch_data["success"])
+        self.assertEqual(patch_data["report"]["status"], "in_progress")
+        self.assertEqual(patch_data["report"]["admin_notes"], "Investigating Guacamole session timeouts")
+
+        # 6. Admin deleting the feedback report
+        res_del = self.client.delete(f"/api/admin/feedback/{report_id}")
+        self.assertEqual(res_del.status_code, 200)
+        self.assertTrue(res_del.get_json()["success"])
+
+        # Verify it's removed
+        with app.app_context():
+            deleted = db.session.get(FeedbackReport, report_id)
+            self.assertIsNone(deleted)
 
 if __name__ == "__main__":
     unittest.main()

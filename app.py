@@ -8,7 +8,7 @@ from functools import wraps
 from markupsafe import Markup, escape
 from flask import Flask, Response, jsonify, render_template, request, abort, session, redirect, url_for
 
-from models import db, Course, LabTemplate, User, StudentVM, Enrollment
+from models import db, Course, LabTemplate, User, StudentVM, Enrollment, FeedbackReport
 from db_init import seed_database, sync_existing_vms_from_proxmox
 from provisioner import provision_student_vm
 from auth import initiate_auth_flow, acquire_token_by_flow, extract_user_from_claims
@@ -897,6 +897,8 @@ def admin_dashboard():
     students = User.query.filter_by(role="student").order_by(User.cohort, User.name).all()
     running_vms = sum(1 for v in vms if v.status == "running")
     published_count = sum(1 for t in templates if t.is_published)
+    feedback_reports = FeedbackReport.query.order_by(FeedbackReport.created_at.desc()).all()
+    open_feedback_count = sum(1 for f in feedback_reports if f.status in ["open", "in_progress"])
 
     return render_template(
         "admin.html",
@@ -907,7 +909,9 @@ def admin_dashboard():
         total_vms=len(vms),
         running_vms=running_vms,
         total_students=total_students,
-        published_templates_count=published_count
+        published_templates_count=published_count,
+        feedback_reports=feedback_reports,
+        open_feedback_count=open_feedback_count
     )
 
 @app.route("/api/admin/fleet", methods=["GET"])
@@ -1302,6 +1306,103 @@ def api_admin_unenroll():
         "removed_count": removed_count,
         "course_code": course.code
     })
+
+# ==========================================
+# Feedback, Bug Reports & Feature Requests
+# ==========================================
+
+@app.route("/api/feedback", methods=["POST"])
+def api_submit_feedback():
+    """Submits a student/instructor bug report, feature request, or feedback."""
+    data = request.get_json() or {}
+    title = (data.get("title") or "").strip()
+    description = (data.get("description") or "").strip()
+
+    if not title or not description:
+        return jsonify({"success": False, "error": "Title and description are required."}), 400
+
+    report_type = (data.get("type") or "bug").lower()
+    if report_type not in ["bug", "feature", "feedback"]:
+        report_type = "bug"
+
+    category = (data.get("category") or "general").strip()
+    logged_user = session.get("user") or {}
+
+    report = FeedbackReport(
+        report_type=report_type,
+        category=category,
+        title=title,
+        description=description,
+        user_id=logged_user.get("id") or data.get("user_id"),
+        user_name=logged_user.get("name") or data.get("user_name"),
+        user_email=logged_user.get("email") or data.get("user_email"),
+        url=(data.get("url") or "").strip()[:255],
+        user_agent=(data.get("user_agent") or request.headers.get("User-Agent", ""))[:255],
+        screen_resolution=(data.get("screen_resolution") or "").strip()[:64],
+        status="open"
+    )
+
+    db.session.add(report)
+    db.session.commit()
+
+    # Append to local data/feedback.json as fallback backup
+    try:
+        fb_path = Path(__file__).parent / "data" / "feedback.json"
+        existing = []
+        if fb_path.exists():
+            with open(fb_path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+        existing.append(report.to_dict())
+        with open(fb_path, "w", encoding="utf-8") as f:
+            json.dump(existing, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to append to data/feedback.json: {e}")
+
+    return jsonify({"success": True, "report": report.to_dict()}), 201
+
+@app.route("/api/admin/feedback", methods=["GET"])
+@admin_required
+def api_admin_get_feedback():
+    """Returns all submitted feedback reports for administrators."""
+    reports = FeedbackReport.query.order_by(FeedbackReport.created_at.desc()).all()
+    return jsonify({
+        "success": True,
+        "reports": [r.to_dict() for r in reports],
+        "total": len(reports),
+        "open_count": sum(1 for r in reports if r.status in ["open", "in_progress"])
+    })
+
+@app.route("/api/admin/feedback/<int:report_id>", methods=["PATCH"])
+@admin_required
+def api_admin_update_feedback(report_id):
+    """Updates status or admin notes for a feedback report."""
+    report = db.session.get(FeedbackReport, report_id)
+    if not report:
+        return jsonify({"success": False, "error": "Report not found."}), 404
+
+    data = request.get_json() or {}
+    if "status" in data:
+        new_status = data["status"].lower()
+        if new_status in ["open", "in_progress", "resolved", "closed"]:
+            report.status = new_status
+    if "admin_notes" in data:
+        report.admin_notes = data["admin_notes"]
+
+    db.session.commit()
+    return jsonify({"success": True, "report": report.to_dict()})
+
+@app.route("/api/admin/feedback/<int:report_id>", methods=["DELETE"])
+@admin_required
+def api_admin_delete_feedback(report_id):
+    """Deletes a feedback report."""
+    report = db.session.get(FeedbackReport, report_id)
+    if not report:
+        return jsonify({"success": False, "error": "Report not found."}), 404
+
+    db.session.delete(report)
+    db.session.commit()
+    return jsonify({"success": True, "deleted_id": report_id})
+
 
 # ==========================================
 # Microsoft Entra ID Authentication Endpoints

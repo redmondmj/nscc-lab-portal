@@ -154,3 +154,40 @@ class StudentVM(db.Model):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "supports_cdrom": self.template.supports_cdrom if self.template else False
         }
+
+class FeedbackReport(db.Model):
+    __tablename__ = "feedback_reports"
+
+    id = db.Column(db.Integer, primary_key=True)
+    report_type = db.Column(db.String(32), default="bug")  # 'bug', 'feature', 'feedback'
+    category = db.Column(db.String(64), default="general")
+    title = db.Column(db.String(256), nullable=False)
+    description = db.Column(db.Text, nullable=False)
+    user_id = db.Column(db.String(64), nullable=True)
+    user_name = db.Column(db.String(128), nullable=True)
+    user_email = db.Column(db.String(128), nullable=True)
+    url = db.Column(db.String(256), nullable=True)
+    user_agent = db.Column(db.String(256), nullable=True)
+    screen_resolution = db.Column(db.String(64), nullable=True)
+    status = db.Column(db.String(32), default="open")  # 'open', 'in_progress', 'resolved', 'closed'
+    admin_notes = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "type": self.report_type,
+            "category": self.category,
+            "title": self.title,
+            "description": self.description,
+            "user_id": self.user_id,
+            "user_name": self.user_name,
+            "user_email": self.user_email,
+            "url": self.url,
+            "user_agent": self.user_agent,
+            "screen_resolution": self.screen_resolution,
+            "status": self.status,
+            "admin_notes": self.admin_notes,
+            "created_at": self.created_at.isoformat() if self.created_at else None
+        }
+

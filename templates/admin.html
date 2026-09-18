@@ -144,6 +144,10 @@
             <span class="stat-label">Published Templates</span>
             <span id="statTemplates" class="stat-value" style="color: #60a5fa;">{{ published_templates_count }}</span>
         </div>
+        <div class="stat-card">
+            <span class="stat-label">Open Issues / Feedback</span>
+            <span id="statFeedback" class="stat-value" style="color: {% if open_feedback_count > 0 %}#f87171{% else %}#94a3b8{% endif %};">{{ open_feedback_count }}</span>
+        </div>
     </div>
 
     <!-- Alert / Toast Banner -->
@@ -158,6 +162,12 @@
         <div class="nav-tab" onclick="switchTab('templatesTab', this)">Course Lab Templates</div>
         <div class="nav-tab" onclick="switchTab('ansibleTab', this)">Ansible & Automation</div>
         <div class="nav-tab" onclick="switchTab('cohortsTab', this)">Student Cohorts & Rosters</div>
+        <div class="nav-tab" onclick="switchTab('feedbackTab', this)">
+            Feedback & Issues
+            {% if open_feedback_count > 0 %}
+            <span style="background: #ef4444; color: white; border-radius: 9999px; padding: 2px 7px; font-size: 0.72rem; margin-left: 6px; font-weight: 700;">{{ open_feedback_count }}</span>
+            {% endif %}
+        </div>
     </div>
 
     <!-- TAB 1: Student Fleet Overview -->
@@ -536,6 +546,106 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
             </table>
         </div>
     </div>
+
+    <!-- TAB 6: Feedback & Issues -->
+    <div id="feedbackTab" style="display: none;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;">
+                <input type="text" id="feedbackSearch" class="search-bar" placeholder="Search by title, student, or description..." oninput="filterFeedbackTable()">
+                <select id="feedbackStatusFilter" class="search-bar" style="width: 150px;" onchange="filterFeedbackTable()">
+                    <option value="">All Statuses</option>
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="resolved">Resolved</option>
+                    <option value="closed">Closed</option>
+                </select>
+                <select id="feedbackTypeFilter" class="search-bar" style="width: 150px;" onchange="filterFeedbackTable()">
+                    <option value="">All Types</option>
+                    <option value="bug">🐛 Bug Report</option>
+                    <option value="feature">💡 Feature Request</option>
+                    <option value="feedback">💬 Feedback</option>
+                </select>
+            </div>
+            <div>
+                <button class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;" onclick="refreshFeedbackList()">
+                    &#8635; Refresh Issues
+                </button>
+            </div>
+        </div>
+
+        <div style="overflow-x: auto;">
+            <table id="feedbackTable">
+                <thead>
+                    <tr>
+                        <th style="width: 120px;">Date</th>
+                        <th style="width: 110px;">Type</th>
+                        <th style="width: 140px;">Category</th>
+                        <th>Summary & Details</th>
+                        <th style="width: 180px;">Reported By</th>
+                        <th style="width: 140px;">Status</th>
+                        <th style="width: 130px; text-align: right;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="feedbackTableBody">
+                    {% for f in feedback_reports %}
+                    <tr id="fb-row-{{ f.id }}" data-search="{{ f.title }} {{ f.description }} {{ f.user_name or '' }} {{ f.user_id or '' }} {{ f.category }}" data-status="{{ f.status }}" data-type="{{ f.report_type }}">
+                        <td style="font-size: 0.8rem; color: var(--text-muted); white-space: nowrap;">
+                            {{ f.created_at.strftime('%b %d, %H:%M') if f.created_at else 'Recent' }}
+                        </td>
+                        <td>
+                            {% if f.report_type == 'bug' %}
+                            <span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #fca5a5;">🐛 Bug</span>
+                            {% elif f.report_type == 'feature' %}
+                            <span class="badge" style="background: rgba(147, 51, 234, 0.2); color: #d8b4fe;">💡 Feature</span>
+                            {% else %}
+                            <span class="badge badge-info">💬 Feedback</span>
+                            {% endif %}
+                        </td>
+                        <td style="font-size: 0.85rem; color: #cbd5e1;">
+                            {{ f.category|replace('_', ' ')|title }}
+                        </td>
+                        <td>
+                            <strong style="color: #fff; display: block; margin-bottom: 2px;">{{ f.title }}</strong>
+                            <span style="font-size: 0.8rem; color: var(--text-muted); display: block; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                {{ f.description }}
+                            </span>
+                        </td>
+                        <td>
+                            {% if f.user_name or f.user_id %}
+                            <strong style="font-size: 0.85rem; display: block; color: #e2e8f0;">{{ f.user_name or f.user_id }}</strong>
+                            <span style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">{{ f.user_id }}</span>
+                            {% else %}
+                            <span style="font-size: 0.8rem; color: var(--text-muted);">Anonymous</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <select class="feedback-input" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;" onchange="updateFeedbackStatus({{ f.id }}, this.value)">
+                                <option value="open" {% if f.status == 'open' %}selected{% endif %}>🔴 Open</option>
+                                <option value="in_progress" {% if f.status == 'in_progress' %}selected{% endif %}>🟡 In Progress</option>
+                                <option value="resolved" {% if f.status == 'resolved' %}selected{% endif %}>🟢 Resolved</option>
+                                <option value="closed" {% if f.status == 'closed' %}selected{% endif %}>⚪ Closed</option>
+                            </select>
+                        </td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            <button class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;" onclick='openFeedbackDetailModal({{ f.to_dict()|tojson|safe }})'>
+                                Inspect
+                            </button>
+                            <button class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; color: #f87171; border-color: rgba(239, 68, 68, 0.4);" onclick="deleteFeedbackReport({{ f.id }})" title="Delete report">
+                                &times;
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr id="noFeedbackRow">
+                        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                            No feedback or issue reports submitted yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <!-- Add / Edit Template Modal -->
@@ -758,6 +868,62 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
         </form>
     </div>
 </div>
+
+<!-- Feedback Detail / Triage Modal -->
+<div id="feedbackDetailModal" class="modal">
+    <div class="modal-content" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1rem;">
+            <div>
+                <span id="detailTypeBadge" class="badge badge-info">Type</span>
+                <h2 id="detailTitle" style="font-size: 1.25rem; color: #fff; margin-top: 0.4rem; margin-bottom: 0.2rem;"></h2>
+                <span id="detailCategory" style="font-size: 0.8rem; color: var(--text-muted);"></span>
+            </div>
+            <button class="feedback-close-btn" onclick="closeFeedbackDetailModal()">&times;</button>
+        </div>
+
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1.25rem;">
+            <label style="display: block; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.4rem;">Submitted Description</label>
+            <div id="detailDescription" style="white-space: pre-wrap; font-size: 0.9rem; line-height: 1.5; color: #f1f5f9;"></div>
+        </div>
+
+        <!-- Diagnostic Information -->
+        <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid var(--border); border-radius: 8px; padding: 0.85rem; margin-bottom: 1.25rem; font-size: 0.78rem; font-family: monospace; color: #cbd5e1; line-height: 1.6;">
+            <div><strong>Reporter:</strong> <span id="detailUser"></span></div>
+            <div><strong>Email:</strong> <span id="detailEmail"></span></div>
+            <div><strong>Submitted:</strong> <span id="detailDate"></span></div>
+            <div><strong>Page URL:</strong> <span id="detailUrl" style="word-break: break-all;"></span></div>
+            <div><strong>Screen:</strong> <span id="detailScreen"></span></div>
+            <div><strong>User-Agent:</strong> <span id="detailUserAgent" style="word-break: break-all;"></span></div>
+        </div>
+
+        <!-- Admin Triage Form -->
+        <form id="detailForm" onsubmit="saveFeedbackDetail(event)">
+            <input type="hidden" id="detailReportId">
+            <div style="margin-bottom: 1rem;">
+                <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Triage Status:</label>
+                <select id="detailStatusSelect" class="feedback-input">
+                    <option value="open">🔴 Open</option>
+                    <option value="in_progress">🟡 In Progress</option>
+                    <option value="resolved">🟢 Resolved</option>
+                    <option value="closed">⚪ Closed</option>
+                </select>
+            </div>
+            <div style="margin-bottom: 1.25rem;">
+                <label style="display: block; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.3rem;">Faculty / Instructor Notes (Internal):</label>
+                <textarea id="detailAdminNotes" class="feedback-input" rows="3" placeholder="Add resolution details, student follow-up notes, or next steps..."></textarea>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <button type="button" class="btn btn-secondary" style="color: #f87171; border-color: rgba(239, 68, 68, 0.4);" onclick="deleteCurrentFeedback()">
+                    Delete Ticket
+                </button>
+                <div style="display: flex; gap: 0.75rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closeFeedbackDetailModal()">Close</button>
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -777,6 +943,8 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
         document.getElementById("templatesTab").style.display = "none";
         document.getElementById("ansibleTab").style.display = "none";
         document.getElementById("cohortsTab").style.display = "none";
+        const fb = document.getElementById("feedbackTab");
+        if (fb) fb.style.display = "none";
 
         document.querySelectorAll(".nav-tab").forEach(tab => tab.classList.remove("active"));
         document.getElementById(tabId).style.display = "block";
@@ -1247,6 +1415,237 @@ Default Login Username: ${user}`;
         } catch (err) {
             showAdminAlert("Error: " + err.message, "error");
         }
+    }
+
+    // ==========================================
+    // Feedback & Bug Report Admin Management
+    // ==========================================
+
+    let currentSelectedReport = null;
+
+    function filterFeedbackTable() {
+        const q = (document.getElementById("feedbackSearch").value || "").toLowerCase();
+        const status = document.getElementById("feedbackStatusFilter").value;
+        const type = document.getElementById("feedbackTypeFilter").value;
+        const rows = document.querySelectorAll("#feedbackTableBody tr[id^='fb-row-']");
+
+        let visibleCount = 0;
+        rows.forEach(row => {
+            const text = (row.getAttribute("data-search") || "").toLowerCase();
+            const rowStatus = row.getAttribute("data-status") || "";
+            const rowType = row.getAttribute("data-type") || "";
+
+            const matchesQuery = text.includes(q);
+            const matchesStatus = (!status || rowStatus === status);
+            const matchesType = (!type || rowType === type);
+
+            if (matchesQuery && matchesStatus && matchesType) {
+                row.style.display = "";
+                visibleCount++;
+            } else {
+                row.style.display = "none";
+            }
+        });
+    }
+
+    function openFeedbackDetailModal(report) {
+        currentSelectedReport = report;
+        document.getElementById("detailReportId").value = report.id;
+        document.getElementById("detailTitle").innerText = report.title || "Untitled";
+        document.getElementById("detailCategory").innerText = `Category: ${(report.category || "general").replace('_', ' ').toUpperCase()}`;
+        
+        const badge = document.getElementById("detailTypeBadge");
+        if (report.type === "bug") {
+            badge.className = "badge badge-error";
+            badge.innerText = "🐛 Bug Report";
+            badge.style.background = "rgba(239, 68, 68, 0.2)";
+            badge.style.color = "#fca5a5";
+        } else if (report.type === "feature") {
+            badge.className = "badge";
+            badge.innerText = "💡 Feature Request";
+            badge.style.background = "rgba(147, 51, 234, 0.2)";
+            badge.style.color = "#d8b4fe";
+        } else {
+            badge.className = "badge badge-info";
+            badge.innerText = "💬 Feedback";
+            badge.style.background = "";
+            badge.style.color = "";
+        }
+
+        document.getElementById("detailDescription").innerText = report.description || "";
+        document.getElementById("detailUser").innerText = report.user_name ? `${report.user_name} (${report.user_id || 'N/A'})` : (report.user_id || "Anonymous");
+        document.getElementById("detailEmail").innerText = report.user_email || "Not provided";
+        document.getElementById("detailDate").innerText = report.created_at ? new Date(report.created_at).toLocaleString() : "Unknown";
+        document.getElementById("detailUrl").innerText = report.url || "N/A";
+        document.getElementById("detailScreen").innerText = report.screen_resolution || "N/A";
+        document.getElementById("detailUserAgent").innerText = report.user_agent || "N/A";
+
+        document.getElementById("detailStatusSelect").value = report.status || "open";
+        document.getElementById("detailAdminNotes").value = report.admin_notes || "";
+
+        document.getElementById("feedbackDetailModal").style.display = "flex";
+    }
+
+    function closeFeedbackDetailModal() {
+        document.getElementById("feedbackDetailModal").style.display = "none";
+        currentSelectedReport = null;
+    }
+
+    async function saveFeedbackDetail(e) {
+        e.preventDefault();
+        const id = document.getElementById("detailReportId").value;
+        const newStatus = document.getElementById("detailStatusSelect").value;
+        const notes = document.getElementById("detailAdminNotes").value;
+
+        showAdminAlert("Saving ticket triage update...", "info");
+        try {
+            const res = await fetch(`/api/admin/feedback/${id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: newStatus, admin_notes: notes })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showAdminAlert("Feedback report updated successfully!", "success");
+                closeFeedbackDetailModal();
+                refreshFeedbackList();
+            } else {
+                showAdminAlert(data.error || "Failed to update feedback report", "error");
+            }
+        } catch (err) {
+            showAdminAlert("Error: " + err.message, "error");
+        }
+    }
+
+    async function updateFeedbackStatus(id, newStatus) {
+        try {
+            const res = await fetch(`/api/admin/feedback/${id}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: newStatus })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showAdminAlert("Ticket status updated to " + newStatus, "success");
+                const row = document.getElementById(`fb-row-${id}`);
+                if (row) row.setAttribute("data-status", newStatus);
+            } else {
+                showAdminAlert(data.error || "Failed to update status", "error");
+            }
+        } catch (err) {
+            showAdminAlert("Error: " + err.message, "error");
+        }
+    }
+
+    async function deleteFeedbackReport(id) {
+        if (!confirm(`Are you sure you want to permanently delete report #${id}?`)) return;
+
+        showAdminAlert(`Deleting feedback ticket #${id}...`, "info");
+        try {
+            const res = await fetch(`/api/admin/feedback/${id}`, { method: "DELETE" });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                showAdminAlert("Ticket deleted.", "success");
+                const row = document.getElementById(`fb-row-${id}`);
+                if (row) row.remove();
+                refreshFeedbackList();
+            } else {
+                showAdminAlert(data.error || "Failed to delete ticket", "error");
+            }
+        } catch (err) {
+            showAdminAlert("Error: " + err.message, "error");
+        }
+    }
+
+    function deleteCurrentFeedback() {
+        if (currentSelectedReport) {
+            const id = currentSelectedReport.id;
+            closeFeedbackDetailModal();
+            deleteFeedbackReport(id);
+        }
+    }
+
+    async function refreshFeedbackList() {
+        try {
+            const res = await fetch('/api/admin/feedback');
+            const data = await res.json();
+            if (res.ok && data.success) {
+                const stat = document.getElementById("statFeedback");
+                if (stat) {
+                    stat.innerText = data.open_count;
+                    stat.style.color = data.open_count > 0 ? "#f87171" : "#94a3b8";
+                }
+                const tbody = document.getElementById("feedbackTableBody");
+                if (!tbody) return;
+
+                if (data.reports.length === 0) {
+                    tbody.innerHTML = `
+                        <tr id="noFeedbackRow">
+                            <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+                                No feedback or issue reports submitted yet.
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                tbody.innerHTML = data.reports.map(f => {
+                    const typeBadge = f.type === 'bug'
+                        ? '<span class="badge" style="background: rgba(239, 68, 68, 0.2); color: #fca5a5;">🐛 Bug</span>'
+                        : f.type === 'feature'
+                        ? '<span class="badge" style="background: rgba(147, 51, 234, 0.2); color: #d8b4fe;">💡 Feature</span>'
+                        : '<span class="badge badge-info">💬 Feedback</span>';
+                    
+                    const cat = (f.category || "general").replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+                    const dt = f.created_at ? new Date(f.created_at).toLocaleDateString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : 'Recent';
+                    const repUser = f.user_name || f.user_id ? `<strong style="font-size: 0.85rem; display: block; color: #e2e8f0;">${f.user_name || f.user_id}</strong><span style="font-size: 0.75rem; color: var(--text-muted); font-family: monospace;">${f.user_id || ''}</span>` : '<span style="font-size: 0.8rem; color: var(--text-muted);">Anonymous</span>';
+
+                    return `
+                    <tr id="fb-row-${f.id}" data-search="${escapeHtml(f.title + ' ' + f.description + ' ' + (f.user_name || '') + ' ' + (f.user_id || '') + ' ' + f.category)}" data-status="${f.status}" data-type="${f.type}">
+                        <td style="font-size: 0.8rem; color: var(--text-muted); white-space: nowrap;">${dt}</td>
+                        <td>${typeBadge}</td>
+                        <td style="font-size: 0.85rem; color: #cbd5e1;">${cat}</td>
+                        <td>
+                            <strong style="color: #fff; display: block; margin-bottom: 2px;">${escapeHtml(f.title)}</strong>
+                            <span style="font-size: 0.8rem; color: var(--text-muted); display: block; max-width: 480px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                ${escapeHtml(f.description)}
+                            </span>
+                        </td>
+                        <td>${repUser}</td>
+                        <td>
+                            <select class="feedback-input" style="padding: 0.35rem 0.6rem; font-size: 0.8rem;" onchange="updateFeedbackStatus(${f.id}, this.value)">
+                                <option value="open" ${f.status === 'open' ? 'selected' : ''}>🔴 Open</option>
+                                <option value="in_progress" ${f.status === 'in_progress' ? 'selected' : ''}>🟡 In Progress</option>
+                                <option value="resolved" ${f.status === 'resolved' ? 'selected' : ''}>🟢 Resolved</option>
+                                <option value="closed" ${f.status === 'closed' ? 'selected' : ''}>⚪ Closed</option>
+                            </select>
+                        </td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            <button class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;" onclick='openFeedbackDetailModal(${JSON.stringify(f)})'>
+                                Inspect
+                            </button>
+                            <button class="btn btn-secondary" style="font-size: 0.75rem; padding: 0.3rem 0.5rem; color: #f87171; border-color: rgba(239, 68, 68, 0.4);" onclick="deleteFeedbackReport(${f.id})" title="Delete report">
+                                &times;
+                            </button>
+                        </td>
+                    </tr>
+                    `;
+                }).join('');
+                filterFeedbackTable();
+            }
+        } catch (err) {
+            console.error("Failed to refresh feedback list:", err);
+        }
+    }
+
+    function escapeHtml(text) {
+        if (!text) return "";
+        return text
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
     }
 </script>
 {% endblock %}
