@@ -844,6 +844,8 @@ def console_view(course_id, vmid):
         domain = None
         if "\\" in username:
             domain, username = username.split("\\", 1)
+            if domain == ".":
+                domain = None
 
         rdp_settings = {
             "hostname": target_ip,
