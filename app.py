@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import logging
 import traceback
 from pathlib import Path
@@ -1127,21 +1128,68 @@ def api_admin_delete_vm(vmid):
     proxmox = get_proxmox_client()
     vm_record = StudentVM.query.filter_by(vmid=vmid).first()
 
-    if proxmox and vm_record:
+    node = vm_record.node if vm_record else None
+
+    # If node is unknown, search cluster resources
+    if proxmox and not node:
         try:
-            try:
-                proxmox.nodes(vm_record.node).qemu(vmid).status.stop.post()
-            except Exception:
-                pass
-            proxmox.nodes(vm_record.node).qemu(vmid).delete()
+            for res in proxmox.cluster.resources.get(type="vm"):
+                if res.get("vmid") == vmid:
+                    node = res.get("node")
+                    break
         except Exception as e:
-            logger.warning(f"Proxmox deletion error for VM {vmid}: {e}")
+            logger.warning(f"Cluster resource lookup failed for VM {vmid}: {e}")
+
+    if proxmox and node:
+        try:
+            # Check current status
+            try:
+                vm_status = proxmox.nodes(node).qemu(vmid).status.current.get().get("status")
+            except Exception as e:
+                err_str = str(e).lower()
+                if "configuration file" in err_str or "does not exist" in err_str or "404" in err_str:
+                    vm_status = "not_found"
+                else:
+                    vm_status = "unknown"
+
+            # If running, stop and wait for it to fully stop
+            if vm_status == "running":
+                try:
+                    proxmox.nodes(node).qemu(vmid).status.stop.post(skiplock=1)
+                except Exception:
+                    try:
+                        proxmox.nodes(node).qemu(vmid).status.stop.post()
+                    except Exception:
+                        pass
+
+                # Poll up to 15 seconds for VM to transition to stopped
+                for _ in range(15):
+                    time.sleep(1)
+                    try:
+                        curr = proxmox.nodes(node).qemu(vmid).status.current.get().get("status")
+                        if curr == "stopped":
+                            break
+                    except Exception:
+                        break
+
+            # Delete the VM from Proxmox if it exists
+            if vm_status != "not_found":
+                try:
+                    proxmox.nodes(node).qemu(vmid).delete(purge=1, skiplock=1, destroy_unreferenced_disks=1)
+                except Exception:
+                    proxmox.nodes(node).qemu(vmid).delete()
+
+        except Exception as e:
+            err_msg = str(e)
+            if "does not exist" not in err_msg.lower() and "404" not in err_msg:
+                logger.error(f"Proxmox deletion error for VM {vmid}: {e}")
+                return jsonify({"success": False, "error": f"Failed to delete VM {vmid} on Proxmox: {err_msg}"}), 500
 
     if vm_record:
         db.session.delete(vm_record)
         db.session.commit()
 
-    return jsonify({"success": True, "message": f"VM {vmid} deleted."})
+    return jsonify({"success": True, "message": f"VM {vmid} deleted successfully."})
 
 @app.route("/api/admin/ansible/inventory", methods=["GET"])
 @admin_required
