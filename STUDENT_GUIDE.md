@@ -69,6 +69,22 @@ You have two convenient ways to interact with your VM:
   ssh student@<your-vm-ip>
   ```
 
+### Method D: Virt-Viewer / SPICE Console *(Direct Hypervisor Display)*
+- **When to use**: If the operating system is still booting, if you need BIOS/bootloader access, or if you encounter network or display adapter issues with RDP.
+- **Client Installation (One-Time Setup)**:
+  - **Windows**: Open PowerShell or Windows Terminal and run:
+    ```powershell
+    winget install RedHat.VirtViewer
+    ```
+  - **macOS**: Open Terminal and run:
+    ```bash
+    brew install virt-viewer
+    ```
+  - **Linux (Debian/Ubuntu)**: Run `sudo apt install virt-viewer`
+- **Connecting**:
+  - Click **📡 Virt-Viewer** on your VM card to download the `.vv` connection file.
+  - Open the downloaded `.vv` file—Virt-Viewer will launch and connect directly to your VM's hardware console over SPICE.
+
 ---
 
 ## Step 5: Managing Your VM Lifecycle
