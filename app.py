@@ -151,6 +151,36 @@ def get_vm_ip(proxmox, node, vmid):
         pass
     return None
 
+def get_vm_cdrom_info(vm_config):
+    """Parses QEMU VM config for any CD-ROM drive and mounted ISO."""
+    if not isinstance(vm_config, dict):
+        return {"drive": "ide2", "has_media": False, "volid": None, "iso_name": None, "raw": None, "boot": ""}
+
+    for key, val in vm_config.items():
+        if isinstance(val, str) and "media=cdrom" in val:
+            parts = [p.strip() for p in val.split(",")]
+            volid = parts[0]
+            is_empty = (volid == "none" or not volid)
+            iso_name = None
+            if not is_empty:
+                iso_name = volid.split("/")[-1] if "/" in volid else volid
+            return {
+                "drive": key,
+                "has_media": not is_empty,
+                "volid": None if is_empty else volid,
+                "iso_name": iso_name,
+                "raw": val,
+                "boot": vm_config.get("boot", "")
+            }
+    return {
+        "drive": "ide2",
+        "has_media": False,
+        "volid": None,
+        "iso_name": None,
+        "raw": None,
+        "boot": vm_config.get("boot", "")
+    }
+
 # Sync existing cluster VMs into DB if Proxmox is reachable
 try:
     _p = get_proxmox_client()
@@ -256,6 +286,9 @@ def api_student_vms(course_id, student_id):
                         vm_data["ip"] = ip
                         vm.last_ip = ip
                         db.session.commit()
+                # Fetch optical drive (CD-ROM) status
+                conf = proxmox.nodes(vm.node).qemu(vm.vmid).config.get()
+                vm_data["cdrom"] = get_vm_cdrom_info(conf)
             except Exception:
                 pass
         result.append(vm_data)
@@ -353,6 +386,13 @@ def api_vm_status(course_id, vmid):
         state = current_status.get("status", "stopped")
         ip = get_vm_ip(proxmox, node, real_vmid) if state == "running" else None
 
+        conf = {}
+        try:
+            conf = proxmox.nodes(node).qemu(real_vmid).config.get()
+        except Exception:
+            pass
+        cdrom_info = get_vm_cdrom_info(conf)
+
         return jsonify({
             "found": True if node else False,
             "vmid": real_vmid,
@@ -360,6 +400,7 @@ def api_vm_status(course_id, vmid):
             "node": node,
             "status": state,
             "ip": ip,
+            "cdrom": cdrom_info,
             "uptime": current_status.get("uptime", 0)
         })
     except Exception as e:
@@ -438,6 +479,111 @@ def api_stop_vm(course_id, vmid):
     except Exception as e:
         logger.error(f"Error stopping VM: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route("/api/cluster/isos", methods=["GET"])
+def api_cluster_isos():
+    """Returns list of ISO files available in cluster storage."""
+    proxmox = get_proxmox_client()
+    if not proxmox:
+        return jsonify({"success": False, "error": "Proxmox connection not configured."}), 503
+
+    requested_node = request.args.get("node")
+    nodes_to_check = [requested_node] if requested_node else ["pve", "pve2"]
+    isos = []
+    seen_volids = set()
+
+    for node in nodes_to_check:
+        try:
+            storages = proxmox.nodes(node).storage.get()
+            for s in storages:
+                content_types = s.get("content", "").split(",")
+                if "iso" in content_types:
+                    storage_id = s.get("storage")
+                    try:
+                        vol_list = proxmox.nodes(node).storage(storage_id).content.get(content="iso")
+                        for vol in vol_list:
+                            volid = vol.get("volid")
+                            if volid and volid not in seen_volids:
+                                seen_volids.add(volid)
+                                filename = volid.split("/")[-1] if "/" in volid else volid
+                                isos.append({
+                                    "volid": volid,
+                                    "filename": filename,
+                                    "size": vol.get("size", 0),
+                                    "format": vol.get("format", "iso"),
+                                    "storage": storage_id,
+                                    "node": node
+                                })
+                    except Exception as ve:
+                        logger.warning(f"Error querying storage {storage_id} on {node}: {ve}")
+        except Exception as ne:
+            logger.warning(f"Error querying storages on {node}: {ne}")
+
+    isos.sort(key=lambda x: x["filename"].lower())
+    return jsonify({"success": True, "isos": isos})
+
+@app.route("/api/<course_id>/cdrom/<vmid>", methods=["POST"])
+def api_vm_cdrom(course_id, vmid):
+    """Ejects or mounts an ISO to the student VM virtual optical drive."""
+    course = db.session.get(Course, course_id.lower())
+    proxmox = get_proxmox_client()
+    if not proxmox:
+        return jsonify({"success": False, "error": "Proxmox connection not configured."}), 503
+
+    node, real_vmid, vm_res = find_vm_by_id_or_name(proxmox, vmid, course)
+    if not node:
+        return jsonify({"success": False, "error": f"VM {vmid} not found."}), 404
+
+    logged_user = session.get("user")
+    if logged_user and logged_user.get("role") not in ["instructor", "admin"]:
+        vm_record = StudentVM.query.filter_by(vmid=int(real_vmid)).first()
+        student_id = logged_user.get("id", "").lower()
+        if vm_record and vm_record.user_id.lower() != student_id:
+            abort(403, description="Access denied. You can only control your own virtual machine.")
+
+    data = request.get_json(force=True, silent=True) or {}
+    action = data.get("action", "eject")
+
+    try:
+        vm_config = proxmox.nodes(node).qemu(real_vmid).config.get()
+        cdrom_info = get_vm_cdrom_info(vm_config)
+        drive = cdrom_info["drive"] or "ide2"
+
+        if action == "eject":
+            proxmox.nodes(node).qemu(real_vmid).config.post(
+                **{drive: "none,media=cdrom", "boot": "order=scsi0;net0"}
+            )
+            return jsonify({
+                "success": True,
+                "message": "Virtual disc ejected. Hard disk prioritized in boot order.",
+                "drive": drive,
+                "has_media": False
+            })
+        elif action == "mount":
+            iso_volid = data.get("iso")
+            if not iso_volid:
+                return jsonify({"success": False, "error": "Please select an ISO image to mount."}), 400
+
+            boot_first = bool(data.get("boot_first", False))
+            config_payload = {drive: f"{iso_volid},media=cdrom"}
+            if boot_first:
+                config_payload["boot"] = f"order={drive};scsi0;net0"
+
+            proxmox.nodes(node).qemu(real_vmid).config.post(**config_payload)
+            iso_name = iso_volid.split("/")[-1] if "/" in iso_volid else iso_volid
+            return jsonify({
+                "success": True,
+                "message": f"Mounted {iso_name} into {drive}." + (" Configured to boot from ISO on next reboot." if boot_first else ""),
+                "drive": drive,
+                "has_media": True,
+                "iso_name": iso_name
+            })
+        else:
+            return jsonify({"success": False, "error": f"Invalid action '{action}'."}), 400
+    except Exception as e:
+        logger.error(f"Error updating optical drive on VM {vmid}: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 
 @app.route("/api/<course_id>/vv/<vmid>", methods=["GET"])

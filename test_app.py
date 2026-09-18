@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch, MagicMock
 from app import app, db
 
 class TestProxmoxApp(unittest.TestCase):
@@ -457,6 +458,51 @@ class TestProxmoxApp(unittest.TestCase):
         del_active_res = self.client.delete("/api/admin/courses/osys1200")
         self.assertEqual(del_active_res.status_code, 400)
         self.assertIn("Cannot delete course", del_active_res.get_json()["error"])
+
+    @patch("app.get_proxmox_client")
+    def test_cdrom_eject_and_mount(self, mock_get_proxmox):
+        mock_p = MagicMock()
+        mock_get_proxmox.return_value = mock_p
+
+        mock_p.cluster.resources.get.return_value = [
+            {"vmid": 2002, "node": "pve2", "name": "OSYS1200-W0123456-Lab1", "type": "qemu"}
+        ]
+        mock_p.nodes("pve2").qemu("2002").config.get.return_value = {
+            "ide2": "local:iso/ubuntu-26.04.1-live-server-amd64.iso,media=cdrom",
+            "boot": "order=ide2;scsi0"
+        }
+
+        # Test GET /api/cluster/isos
+        mock_p.nodes.return_value.storage.get.return_value = [{"storage": "local", "content": "iso"}]
+        mock_p.nodes.return_value.storage.return_value.content.get.return_value = [
+            {"volid": "local:iso/ubuntu-26.04.1.iso", "size": 2000000000, "format": "iso"}
+        ]
+
+        res_isos = self.client.get("/api/cluster/isos?node=pve")
+        self.assertEqual(res_isos.status_code, 200)
+        data = res_isos.get_json()
+        self.assertTrue(data["success"])
+        self.assertTrue(any("ubuntu-26.04.1.iso" in x["filename"] for x in data["isos"]))
+
+        # Test POST eject
+        res_eject = self.client.post("/api/osys1200/cdrom/2002", json={"action": "eject"})
+        self.assertEqual(res_eject.status_code, 200)
+        self.assertTrue(res_eject.get_json()["success"])
+        mock_p.nodes("pve2").qemu("2002").config.post.assert_called_with(
+            ide2="none,media=cdrom", boot="order=scsi0;net0"
+        )
+
+        # Test POST mount
+        res_mount = self.client.post("/api/osys1200/cdrom/2002", json={
+            "action": "mount",
+            "iso": "local:iso/ubuntu-26.04.1.iso",
+            "boot_first": True
+        })
+        self.assertEqual(res_mount.status_code, 200)
+        self.assertTrue(res_mount.get_json()["success"])
+        mock_p.nodes("pve2").qemu("2002").config.post.assert_called_with(
+            ide2="local:iso/ubuntu-26.04.1.iso,media=cdrom", boot="order=ide2;scsi0;net0"
+        )
 
 if __name__ == "__main__":
     unittest.main()
