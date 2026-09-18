@@ -15,7 +15,7 @@ If you are working from your personal laptop, home network, or campus Wi-Fi, you
      - After installing, open the app, go to **Settings (Gear icon) &rarr; Account &rarr; Login with Cloudflare Zero Trust**.
    - **Android / Chromebooks / Tablets**:
      - ⚠️ **Important**: Do **not** install the standard consumer *"1.1.1.1: Faster Internet"* app—Cloudflare has removed organizational logins from that version.
-     - Install the dedicated enterprise client: **[Cloudflare One](https://play.google.com/store/apps/details?id=com.cloudflare.one)** from Google Play.
+     - Install the dedicated enterprise client: **[Cloudflare One Agent](https://play.google.com/store/apps/details?id=com.cloudflare.cloudflareoneagent&hl=en)** from Google Play.
      - Upon opening the app, tap **Next** and accept the terms. It will immediately prompt you for your organization team name.
    - **iOS / iPadOS**:
      - Install **Cloudflare One** from the Apple App Store.
