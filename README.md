@@ -28,6 +28,12 @@ Built for **OSYS1200 (Operating Systems)** with multi-course support (including 
   <em><strong>Single Sign-On:</strong> Zero-friction Microsoft 365 / Entra ID login enforcing college tenant authentication and course enrollment checks.</em>
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/course-selection.png" alt="Multi-Course Catalog & Portal Selection" width="850">
+  <br>
+  <em><strong>Multi-Course Hub:</strong> Dynamic course catalog displaying enrolled environments across OSYS1200, NETW2710, and OSYS3030.</em>
+</p>
+
 ---
 
 ## Key Features
