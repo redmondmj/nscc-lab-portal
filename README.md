@@ -8,6 +8,28 @@ Built for **OSYS1200 (Operating Systems)** with multi-course support (including 
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/admin-fleet-overview.png" alt="Faculty Command Center & Fleet Manager" width="850">
+  <br>
+  <em><strong>Faculty Command Center:</strong> Real-time fleet overview, cluster node distribution, dynamic IP detection, and live VM lifecycle controls.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/student-vm-dashboard.png" alt="Student Self-Service VM Dashboard" width="850">
+  <br>
+  <em><strong>Student Portal:</strong> Self-service VM dashboard with 1-click provisioning, quick IP copy, HTML5 browser desktop, native RDP, and SPICE console.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/student-login-sso.png" alt="Microsoft Entra ID SSO" width="850">
+  <br>
+  <em><strong>Single Sign-On:</strong> Zero-friction Microsoft 365 / Entra ID login enforcing college tenant authentication and course enrollment checks.</em>
+</p>
+
+---
+
 ## Key Features
 
 - **Self-Service Student Dashboard**:
