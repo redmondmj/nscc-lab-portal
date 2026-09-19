@@ -165,10 +165,29 @@
             border: 1px solid #475569;
             border-radius: 12px;
             padding: 1.5rem;
-            width: 420px;
+            width: 460px;
             max-width: 90%;
             z-index: 200;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.7);
+        }
+
+        #consoleToast {
+            display: none;
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 23, 42, 0.95);
+            color: #38bdf8;
+            border: 1px solid #0284c7;
+            padding: 0.75rem 1.5rem;
+            border-radius: 9999px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            z-index: 300;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(8px);
+            pointer-events: none;
         }
     </style>
 </head>
@@ -218,16 +237,34 @@
 
     <!-- Shared Clipboard Modal -->
     <div id="clipboardModal">
-        <h3 style="font-size: 1.1rem; margin-bottom: 0.75rem;">Remote Clipboard</h3>
-        <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.75rem;">
-            Paste text below to send it to your Windows virtual machine:
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <h3 style="font-size: 1.1rem; margin: 0; color: #fff;">📋 Remote Clipboard</h3>
+            <button type="button" onclick="toggleClipboardModal()" style="background: none; border: none; color: #94a3b8; font-size: 1.2rem; cursor: pointer;">&times;</button>
+        </div>
+        <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 0.75rem; line-height: 1.4;">
+            Type or paste text below. Click <strong>Send to VM Clipboard</strong> (then press <kbd style="background: #334155; padding: 2px 5px; border-radius: 4px;">Ctrl+V</kbd> inside the VM) or <strong>Type into VM</strong> to insert directly at the cursor.
         </p>
-        <textarea id="clipboardText" style="width: 100%; height: 120px; background: #0f172a; border: 1px solid #475569; border-radius: 8px; color: #fff; padding: 0.75rem; font-family: monospace; font-size: 0.85rem;"></textarea>
-        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+        <textarea id="clipboardText" 
+                  onkeydown="event.stopPropagation();" 
+                  onkeyup="event.stopPropagation();" 
+                  onkeypress="event.stopPropagation();"
+                  placeholder="Paste or type text here..."
+                  style="width: 100%; height: 120px; background: #0f172a; border: 1px solid #475569; border-radius: 8px; color: #fff; padding: 0.75rem; font-family: monospace; font-size: 0.85rem; box-sizing: border-box;"></textarea>
+        <div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
             <button class="btn-ctrl" onclick="toggleClipboardModal()">Cancel</button>
-            <button class="btn-ctrl" style="background: #2563eb; color: white;" onclick="sendClipboard()">Send to VM</button>
+            <div style="display: flex; gap: 0.5rem;">
+                <button class="btn-ctrl" style="background: #334155; color: #e2e8f0;" onclick="typeTextIntoVm()" title="Simulate direct typing into active window">
+                    ⌨️ Type into VM
+                </button>
+                <button class="btn-ctrl" style="background: #2563eb; color: white;" onclick="sendClipboard()" title="Copy text into VM clipboard">
+                    📋 Send to VM Clipboard
+                </button>
+            </div>
         </div>
     </div>
+
+    <!-- Notification Toast -->
+    <div id="consoleToast"></div>
 
     <!-- Guacamole Client Library -->
     <script src="{{ url_for('static', filename='guacamole-common.min.js') }}"></script>
@@ -308,9 +345,16 @@
             // Keyboard handling
             keyboard = new Guacamole.Keyboard(document);
             keyboard.onkeydown = function(keysym) {
+                // If user is focused on an input or textarea (like the clipboard dialog), do NOT send keys to VM!
+                if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+                    return;
+                }
                 client.sendKeyEvent(1, keysym);
             };
             keyboard.onkeyup = function(keysym) {
+                if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+                    return;
+                }
                 client.sendKeyEvent(0, keysym);
             };
 
@@ -385,21 +429,77 @@
         // Shared Clipboard Modal
         function toggleClipboardModal() {
             const modal = document.getElementById("clipboardModal");
-            modal.style.display = (modal.style.display === "block") ? "none" : "block";
-            if (modal.style.display === "block") {
-                document.getElementById("clipboardText").focus();
+            const isCurrentlyOpen = (modal.style.display === "block");
+
+            if (isCurrentlyOpen) {
+                modal.style.display = "none";
+                if (keyboard) {
+                    keyboard.listen = true;
+                }
+            } else {
+                modal.style.display = "block";
+                if (keyboard) {
+                    keyboard.reset();
+                    keyboard.listen = false;
+                }
+                const textarea = document.getElementById("clipboardText");
+                if (textarea) {
+                    setTimeout(() => {
+                        textarea.focus();
+                        textarea.select();
+                    }, 50);
+                }
             }
         }
 
+        function showConsoleToast(msg) {
+            const toast = document.getElementById("consoleToast");
+            if (!toast) return;
+            toast.innerText = msg;
+            toast.style.display = "block";
+            setTimeout(() => { toast.style.display = "none"; }, 4000);
+        }
+
         function sendClipboard() {
-            const text = document.getElementById("clipboardText").value;
-            if (client && text) {
+            const textarea = document.getElementById("clipboardText");
+            const text = textarea ? textarea.value : "";
+            if (!text) {
+                showConsoleToast("⚠️ Clipboard is empty. Type or paste text first.");
+                return;
+            }
+            if (client) {
+                // Ensure Windows CRLF line endings for native RDP clipboard compatibility
+                const normalized = text.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n");
                 const stream = client.createClipboardStream("text/plain");
                 const writer = new Guacamole.StringWriter(stream);
-                writer.sendText(text);
+                writer.sendText(normalized);
                 writer.sendEnd();
                 toggleClipboardModal();
-                console.log("Clipboard text sent to VM");
+                showConsoleToast("📋 Text sent to VM clipboard! Press Ctrl+V in your VM to paste.");
+                console.log("Clipboard text sent to VM:", normalized.length, "bytes");
+            }
+        }
+
+        function typeTextIntoVm() {
+            const textarea = document.getElementById("clipboardText");
+            const text = textarea ? textarea.value : "";
+            if (!text) {
+                showConsoleToast("⚠️ Please enter text to type first.");
+                return;
+            }
+            if (client) {
+                toggleClipboardModal();
+                showConsoleToast("⌨️ Typing characters directly into active VM...");
+                for (let i = 0; i < text.length; i++) {
+                    const char = text[i];
+                    let keysym = char.charCodeAt(0);
+                    if (char === '\n') keysym = 0xFF0D; // Return / Enter
+                    else if (char === '\r') continue;
+                    else if (char === '\t') keysym = 0xFF09; // Tab
+                    
+                    client.sendKeyEvent(1, keysym);
+                    client.sendKeyEvent(0, keysym);
+                }
             }
         }
 

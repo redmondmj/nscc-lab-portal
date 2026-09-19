@@ -1333,12 +1333,17 @@ def api_admin_unenroll():
 
     removed_count = 0
     if user_id:
-        enr = Enrollment.query.filter_by(user_id=user_id.lower(), course_id=course.id).first()
+        enr = Enrollment.query.filter(
+            db.func.lower(Enrollment.user_id) == user_id.strip().lower(),
+            Enrollment.course_id == course.id
+        ).first()
         if enr:
             db.session.delete(enr)
             removed_count = 1
+        else:
+            return jsonify({"success": False, "error": f"Student '{user_id}' is not enrolled in {course.code}."}), 404
     elif cohort:
-        cohort_users = User.query.filter_by(cohort=cohort).all()
+        cohort_users = User.query.filter(db.func.lower(User.cohort) == cohort.strip().lower()).all()
         user_ids = [u.id for u in cohort_users]
         if user_ids:
             enrs = Enrollment.query.filter(Enrollment.course_id == course.id, Enrollment.user_id.in_(user_ids)).all()

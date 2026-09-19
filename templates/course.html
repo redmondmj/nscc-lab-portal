@@ -379,7 +379,55 @@
     let currentStudentId = "";
     let publishedTemplates = [];
     let studentVms = [];
-    let pollingTimers = {};
+    let autoPollTimer = null;
+    let autoPollAttempts = 0;
+    const MAX_AUTO_POLL_ATTEMPTS = 25; // 25 * 3.5s = ~87s maximum polling window
+
+    function checkAndTriggerAutoPoll() {
+        const hasPendingRunningVm = studentVms.some(v => v.status === "running" && !v.ip);
+        if (hasPendingRunningVm) {
+            if (!autoPollTimer) {
+                autoPollAttempts = 0;
+                startAutoPolling();
+            }
+        } else {
+            stopAutoPolling();
+        }
+    }
+
+    function startAutoPolling() {
+        if (autoPollTimer) return;
+        autoPollTimer = setInterval(async () => {
+            autoPollAttempts++;
+            if (autoPollAttempts > MAX_AUTO_POLL_ATTEMPTS) {
+                stopAutoPolling();
+                return;
+            }
+            if (!currentStudentId) return;
+            try {
+                const vmRes = await fetch(`/api/${COURSE_ID}/student/${currentStudentId}/vms`);
+                if (vmRes.ok) {
+                    const vmData = await vmRes.json();
+                    studentVms = vmData.vms || [];
+                    renderDashboard();
+                    const stillPending = studentVms.some(v => v.status === "running" && !v.ip);
+                    if (!stillPending) {
+                        stopAutoPolling();
+                    }
+                }
+            } catch (e) {
+                console.warn("Auto-polling check failed:", e);
+            }
+        }, 3500);
+    }
+
+    function stopAutoPolling() {
+        if (autoPollTimer) {
+            clearInterval(autoPollTimer);
+            autoPollTimer = null;
+            autoPollAttempts = 0;
+        }
+    }
 
     function sanitizeId(raw) {
         if (!raw) return "";
@@ -667,6 +715,8 @@
         if (studentVms.length === 0 && publishedTemplates.length === 0) {
             showAlert(`No virtual machines or published lab templates found for student <code>${currentStudentId}</code>.`, "info");
         }
+
+        checkAndTriggerAutoPoll();
     }
 
     async function provisionTemplate(templateId) {
@@ -692,6 +742,7 @@
             if (res.ok && data.success) {
                 showAlert(`Success! ${data.message} Initializing VM...`, "success");
                 await loadStudentLabs();
+                startAutoPolling();
             } else {
                 showAlert(data.error || "Failed to provision VM.", "error");
             }
@@ -711,7 +762,10 @@
             const data = await res.json();
             if (res.ok) {
                 showAlert("Start command issued. Waiting for VM boot & DHCP IP...", "info");
-                setTimeout(loadStudentLabs, 4000);
+                setTimeout(async () => {
+                    await loadStudentLabs();
+                    startAutoPolling();
+                }, 3000);
             } else {
                 showAlert(data.error || "Failed to start VM.", "error");
             }

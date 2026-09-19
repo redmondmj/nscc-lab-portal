@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch, MagicMock
 from app import app, db, find_vm_by_id_or_name
-from models import StudentVM, User, Course, LabTemplate, FeedbackReport
+from models import StudentVM, User, Course, LabTemplate, FeedbackReport, Enrollment
 
 class TestProxmoxApp(unittest.TestCase):
     def setUp(self):
@@ -626,6 +626,53 @@ class TestProxmoxApp(unittest.TestCase):
         with app.app_context():
             deleted = db.session.get(FeedbackReport, report_id)
             self.assertIsNone(deleted)
+
+    def test_admin_unenroll_case_insensitivity(self):
+        """Test that unenrollment matches student ID case-insensitively (e.g. REDMONDO vs redmondo)."""
+        with app.app_context():
+            # Setup user and uppercase ID enrollment
+            u = db.session.get(User, "TESTUSER123")
+            if not u:
+                u = User(id="TESTUSER123", name="Case Test User", email="test@nscc.ca", role="student")
+                db.session.add(u)
+            c = db.session.get(Course, "osys1200")
+            if not c:
+                c = Course(id="osys1200", code="OSYS1200", name="Operating Systems")
+                db.session.add(c)
+            db.session.commit()
+
+            enr = Enrollment.query.filter_by(user_id="TESTUSER123", course_id="osys1200").first()
+            if not enr:
+                enr = Enrollment(user_id="TESTUSER123", course_id="osys1200")
+                db.session.add(enr)
+                db.session.commit()
+
+        # Admin session
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "admin", "name": "Admin", "role": "admin"}
+
+        # Request unenroll using lowercase 'testuser123'
+        res = self.client.post("/api/admin/unenroll", json={
+            "user_id": "testuser123",
+            "course_id": "osys1200"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["removed_count"], 1)
+
+        # Verify enrollment is deleted
+        with app.app_context():
+            deleted_enr = Enrollment.query.filter_by(user_id="TESTUSER123", course_id="osys1200").first()
+            self.assertIsNone(deleted_enr)
+
+        # Re-attempting removal should return 404
+        res_404 = self.client.post("/api/admin/unenroll", json={
+            "user_id": "testuser123",
+            "course_id": "osys1200"
+        })
+        self.assertEqual(res_404.status_code, 404)
+
 
 if __name__ == "__main__":
     unittest.main()

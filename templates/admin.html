@@ -6,12 +6,33 @@
 <style>
     .admin-container {
         width: 100%;
-        max-width: 1200px;
+        max-width: min(1560px, 96vw);
         background: var(--card-bg);
         border: 1px solid var(--border);
         border-radius: 16px;
         padding: 2rem;
         box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+    }
+    .table-container {
+        overflow-x: auto;
+        position: relative;
+        border-radius: 8px;
+        border: 1px solid var(--border);
+        margin-top: 1rem;
+    }
+    .table-container table {
+        margin-top: 0;
+    }
+    .sticky-action-col {
+        position: sticky;
+        right: 0;
+        background: #0f172a;
+        box-shadow: -4px 0 8px rgba(0, 0, 0, 0.35);
+        z-index: 5;
+    }
+    th.sticky-action-col {
+        background: rgba(15, 23, 42, 0.95);
+        z-index: 6;
     }
     .nav-tabs {
         display: flex;
@@ -226,6 +247,7 @@
                             <span style="font-family: monospace; color: #38bdf8;">{{ vm.last_ip or (vm.status == 'running' and 'Acquiring...' or 'Offline') }}</span>
                         </td>
                         <td>
+                            <div style="display: flex; gap: 0.35rem; align-items: center; flex-wrap: wrap;">
                                 {% if (vm.template and vm.template.os_type == 'linux') or (vm.course and vm.course.os_type == 'linux') %}
                                 <a href="/{{ vm.course_id }}/console/{{ vm.vmid }}" target="_blank" class="btn btn-primary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; background: #059669; border-color: #047857; {% if not vm.last_ip %}pointer-events: none; opacity: 0.4;{% endif %}" title="Open In-Browser HTML5 Linux Terminal">
                                     &#128187; Terminal
@@ -242,6 +264,15 @@
                                 <a href="/api/{{ vm.course_id }}/rdp/{{ vm.vmid }}" class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; {% if not vm.last_ip %}pointer-events: none; opacity: 0.4;{% endif %}" title="Download RDP Shortcut">
                                     &#128187; RDP
                                 </a>
+                                {% endif %}
+                                {% if vm.status == 'running' %}
+                                <button class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; color: #f59e0b;" onclick="powerAction('{{ vm.course_id }}', {{ vm.vmid }}, 'stop')" title="Stop / Shutdown VM">
+                                    &#9209; Stop
+                                </button>
+                                {% else %}
+                                <button class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem; color: #34d399;" onclick="powerAction('{{ vm.course_id }}', {{ vm.vmid }}, 'start')" title="Start VM">
+                                    &#9654; Start
+                                </button>
                                 {% endif %}
                                 <button class="btn btn-secondary" style="padding: 0.35rem 0.65rem; font-size: 0.8rem;" onclick="powerAction('{{ vm.course_id }}', {{ vm.vmid }}, 'restart')" title="Reboot VM">
                                     &#8635;
@@ -273,18 +304,18 @@
             </div>
         </div>
 
-        <div style="overflow-x: auto;">
+        <div class="table-container">
             <table>
                 <thead>
                     <tr>
-                        <th>Course Code</th>
-                        <th>Name & Description</th>
-                        <th>Host Node</th>
-                        <th>Access Protocols</th>
-                        <th>Default User</th>
-                        <th>Course Lab Notes Preview</th>
-                        <th>Enrollment</th>
-                        <th>Actions</th>
+                        <th style="min-width: 110px;">Course Code</th>
+                        <th style="min-width: 180px;">Name & Description</th>
+                        <th style="min-width: 90px;">Host Node</th>
+                        <th style="min-width: 110px;">Protocols</th>
+                        <th style="min-width: 110px;">Default User</th>
+                        <th style="min-width: 200px;">Lab Notes Preview</th>
+                        <th style="min-width: 110px;">Enrollment</th>
+                        <th class="sticky-action-col" style="min-width: 140px; text-align: right;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -325,7 +356,7 @@
                         </td>
                         <td>
                             {% if c.custom_notes and c.custom_notes.strip() %}
-                            <div style="font-size: 0.78rem; color: #cbd5e1; max-width: 260px; line-height: 1.4;">
+                            <div style="font-size: 0.78rem; color: #cbd5e1; max-width: 240px; line-height: 1.4;">
                                 {% for line in c.custom_notes.splitlines()[:2] %}
                                     {% if line.strip() %}
                                     <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">&bull; {{ line.strip() }}</div>
@@ -347,8 +378,8 @@
                                 {{ c.student_vms|length }} VM(s)
                             </span>
                         </td>
-                        <td>
-                            <div style="display: flex; gap: 0.4rem;">
+                        <td class="sticky-action-col" style="text-align: right;">
+                            <div style="display: flex; gap: 0.4rem; justify-content: flex-end;">
                                 <button class="btn btn-secondary" style="padding: 0.4rem 0.75rem; font-size: 0.8rem;" 
                                     onclick='openEditCourseModal({{ c.to_dict()|tojson }})' title="Edit Course Details & Notes">
                                     Edit
@@ -445,21 +476,25 @@
         </p>
 
         <div style="background: #0f172a; border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;">
-            <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.5rem;">Inventory URL:</span>
-            <code style="font-size: 0.95rem; color: #38bdf8;">http://10.10.0.103/api/admin/ansible/inventory</code>
-            <div style="margin-top: 1rem;">
-                <a href="/api/admin/ansible/inventory" target="_blank" class="btn btn-secondary" style="font-size: 0.85rem; padding: 0.5rem 0.9rem;">
-                    Preview JSON Inventory &rarr;
+            <span style="font-size: 0.8rem; color: var(--text-muted); display: block; margin-bottom: 0.5rem;">Dynamic Inventory URL:</span>
+            <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <code id="ansibleInventoryUrl" style="font-size: 0.95rem; color: #38bdf8;">/api/admin/ansible/inventory</code>
+                <button type="button" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.65rem;" onclick="copyAnsibleUrl(this)" title="Copy dynamic inventory URL to clipboard">
+                    📋 Copy URL
+                </button>
+                <a id="ansiblePreviewLink" href="/api/admin/ansible/inventory" target="_blank" class="btn btn-secondary" style="font-size: 0.8rem; padding: 0.35rem 0.65rem;">
+                    Preview JSON &rarr;
                 </a>
             </div>
         </div>
 
         <h4 style="color: #cbd5e1; font-size: 1rem; margin-bottom: 0.5rem;">Usage with Ansible Playbooks:</h4>
-        <pre style="background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; color: #f1f5f9; font-family: monospace; font-size: 0.85rem; overflow-x: auto;">
-# Run a playbook targeting all OSYS1200 student VMs:
-ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/audit_lab.yml --limit osys1200
+        <pre id="ansibleUsagePre" style="background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; color: #f1f5f9; font-family: monospace; font-size: 0.85rem; overflow-x: auto;">
+# Target student VMs by course group:
+ansible-playbook -i "/api/admin/ansible/inventory" playbooks/audit_lab.yml --limit osys1200
 
 # Ping all active VMs in the fleet:
+ansible all -i "/api/admin/ansible/inventory" -m ping
         </pre>
     </div>
 
@@ -523,7 +558,7 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
                                 {% for enr in s.enrollments %}
                                 <span class="badge badge-success" style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; padding: 0.2rem 0.5rem;">
                                     {{ enr.course.code if enr.course else enr.course_id.upper() }}
-                                    <span onclick="unenrollStudent('{{ s.id }}', '{{ enr.course_id }}')" 
+                                    <span onclick="unenrollStudent('{{ s.id }}', '{{ enr.course_id }}', this)" 
                                           style="cursor: pointer; opacity: 0.8; font-weight: bold; font-size: 0.95rem; margin-left: 2px;" 
                                           title="Remove from course">&times;</span>
                                 </span>
@@ -947,8 +982,50 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
         if (fb) fb.style.display = "none";
 
         document.querySelectorAll(".nav-tab").forEach(tab => tab.classList.remove("active"));
-        document.getElementById(tabId).style.display = "block";
-        el.classList.add("active");
+        const targetTab = document.getElementById(tabId);
+        if (targetTab) targetTab.style.display = "block";
+        if (el) {
+            el.classList.add("active");
+        } else {
+            const matchingTabBtn = document.querySelector(`.nav-tab[onclick*="${tabId}"]`);
+            if (matchingTabBtn) matchingTabBtn.classList.add("active");
+        }
+
+        try {
+            history.replaceState(null, null, '#' + tabId);
+            localStorage.setItem("adminActiveTab", tabId);
+        } catch (e) {}
+
+        if (tabId === "ansibleTab") {
+            updateAnsibleUrls();
+        }
+    }
+
+    function updateAnsibleUrls() {
+        const fullUrl = window.location.origin + "/api/admin/ansible/inventory";
+        const el = document.getElementById("ansibleInventoryUrl");
+        if (el) el.innerText = fullUrl;
+        const link = document.getElementById("ansiblePreviewLink");
+        if (link) link.href = fullUrl;
+        const pre = document.getElementById("ansibleUsagePre");
+        if (pre) {
+            pre.innerHTML = `# Target student VMs by course group:\nansible-playbook -i "${fullUrl}" playbooks/audit_lab.yml --limit osys1200\n\n# Ping all active VMs in the fleet:\nansible all -i "${fullUrl}" -m ping`;
+        }
+    }
+
+    function copyAnsibleUrl(btn) {
+        const fullUrl = window.location.origin + "/api/admin/ansible/inventory";
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(fullUrl).then(() => {
+                const orig = btn.innerHTML;
+                btn.innerHTML = "✅ Copied!";
+                setTimeout(() => { btn.innerHTML = orig; }, 2000);
+            }).catch(() => {
+                prompt("Copy Dynamic Inventory URL:", fullUrl);
+            });
+        } else {
+            prompt("Copy Dynamic Inventory URL:", fullUrl);
+        }
     }
 
     function filterCohortsTable() {
@@ -1079,7 +1156,7 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
         }
     }
 
-    async function unenrollStudent(userId, courseId) {
+    async function unenrollStudent(userId, courseId, triggerEl = null) {
         if (!confirm(`Are you sure you want to remove student '${userId}' from course '${courseId.toUpperCase()}'?`)) return;
 
         showAdminAlert(`Removing ${userId} from ${courseId.toUpperCase()}...`, "info");
@@ -1092,7 +1169,12 @@ ansible-playbook -i "http://10.10.0.103/api/admin/ansible/inventory" playbooks/a
             const data = await res.json();
             if (res.ok && data.success) {
                 showAdminAlert(`Student ${userId} removed from ${data.course_code}.`, "success");
-                setTimeout(() => window.location.reload(), 1000);
+                if (triggerEl) {
+                    const badge = triggerEl.closest(".badge");
+                    if (badge) badge.remove();
+                } else {
+                    setTimeout(() => window.location.reload(), 800);
+                }
             } else {
                 showAdminAlert(data.error || "Removal failed", "error");
             }
@@ -1647,5 +1729,13 @@ Default Login Username: ${user}`;
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#039;");
     }
+
+    window.addEventListener("DOMContentLoaded", function() {
+        updateAnsibleUrls();
+        let activeTab = window.location.hash ? window.location.hash.replace('#', '') : localStorage.getItem("adminActiveTab");
+        if (activeTab && document.getElementById(activeTab)) {
+            switchTab(activeTab);
+        }
+    });
 </script>
 {% endblock %}

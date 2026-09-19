@@ -524,6 +524,9 @@
                         <option value="guacamole_console">In-Browser Guacamole Console</option>
                         <option value="login_auth">Login & Microsoft Authentication</option>
                         <option value="vm_lifecycle">VM Provisioning / Start / Stop</option>
+                        <option value="admin_roster">Admin / Cohorts & Student Rosters</option>
+                        <option value="course_mgmt">Course Details & Lab Notes</option>
+                        <option value="ui_layout">UI / Layout & Display Issue</option>
                         <option value="lab_content">Lab Content & Course Templates</option>
                         <option value="general">General / Other</option>
                     </select>
@@ -577,6 +580,23 @@
             const modal = document.getElementById('feedbackModal');
             if (!modal) return;
             modal.style.display = 'flex';
+
+            // Auto-detect active tab context if present
+            const activeTabEl = document.querySelector('.nav-tab.active');
+            const catSelect = document.getElementById('fbCategory');
+            if (catSelect && activeTabEl) {
+                const tabText = activeTabEl.innerText.toLowerCase();
+                if (tabText.includes('cohort') || tabText.includes('roster')) {
+                    catSelect.value = 'admin_roster';
+                } else if (tabText.includes('course') || tabText.includes('notes')) {
+                    catSelect.value = 'course_mgmt';
+                } else if (tabText.includes('template')) {
+                    catSelect.value = 'lab_content';
+                } else if (tabText.includes('fleet')) {
+                    catSelect.value = 'vm_lifecycle';
+                }
+            }
+
             updateDiagnosticsPreview();
             setTimeout(() => {
                 const titleInput = document.getElementById('fbTitle');
@@ -596,8 +616,12 @@
         }
 
         function getDiagnosticsData() {
+            const activeTabEl = document.querySelector('.nav-tab.active');
+            const activeTabName = activeTabEl ? activeTabEl.innerText.trim() : null;
+
             return {
                 url: window.location.href,
+                activeTab: activeTabName,
                 userAgent: navigator.userAgent,
                 screen: `${window.screen.width}x${window.screen.height} (window: ${window.innerWidth}x${window.innerHeight})`,
                 timestamp: new Date().toISOString(),
@@ -616,6 +640,7 @@
             const d = getDiagnosticsData();
             diagEl.innerHTML = `
                 <strong>URL:</strong> ${d.url}<br>
+                ${d.activeTab ? `<strong>Active Tab:</strong> ${d.activeTab}<br>` : ''}
                 <strong>Screen:</strong> ${d.screen}<br>
                 <strong>User:</strong> ${d.user ? `${d.user.name} (${d.user.id} - ${d.user.role})` : 'Anonymous / Not signed in'}<br>
                 <strong>User-Agent:</strong> ${d.userAgent}
@@ -693,7 +718,7 @@
                         category: category,
                         title: title,
                         description: description,
-                        url: diag.url,
+                        url: diag.activeTab ? `${diag.url} [Tab: ${diag.activeTab}]` : diag.url,
                         user_agent: diag.userAgent,
                         screen_resolution: diag.screen,
                         user_id: diag.user ? diag.user.id : null,
