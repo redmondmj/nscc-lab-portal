@@ -1212,7 +1212,21 @@ def api_admin_ansible_inventory():
             "hostvars": {}
         },
         "all": {
-            "children": ["ungrouped"]
+            "children": ["windows_vms", "linux_vms", "running_vms", "stopped_vms", "ungrouped"]
+        },
+        "windows_vms": {
+            "hosts": [],
+            "children": []
+        },
+        "linux_vms": {
+            "hosts": [],
+            "children": []
+        },
+        "running_vms": {
+            "hosts": []
+        },
+        "stopped_vms": {
+            "hosts": []
         },
         "ungrouped": {
             "hosts": []
@@ -1235,6 +1249,7 @@ def api_admin_ansible_inventory():
 
     for vm in vms:
         host_alias = vm.name
+        is_windows = vm.template.os_type.lower() == "windows" if (vm.template and vm.template.os_type) else True
         tmpl_group = f"{vm.course.code.lower()}_{vm.template.slug}".replace("-", "_") if vm.template else "ungrouped"
 
         if tmpl_group in inventory:
@@ -1242,22 +1257,39 @@ def api_admin_ansible_inventory():
         else:
             inventory["ungrouped"]["hosts"].append(host_alias)
 
-        is_windows = vm.template.os_type.lower() == "windows" if (vm.template and vm.template.os_type) else True
+        if is_windows:
+            inventory["windows_vms"]["hosts"].append(host_alias)
+        else:
+            inventory["linux_vms"]["hosts"].append(host_alias)
+
+        is_running = (vm.status == "running" and bool(vm.last_ip))
+        if is_running:
+            inventory["running_vms"]["hosts"].append(host_alias)
+        else:
+            inventory["stopped_vms"]["hosts"].append(host_alias)
+
         hvars = {
-            "ansible_host": vm.last_ip or "127.0.0.1",
-            "ansible_user": vm.template.default_username if vm.template else ".\\Student",
             "proxmox_vmid": vm.vmid,
             "proxmox_node": vm.node,
             "student_id": vm.user_id,
             "status": vm.status
         }
+        if vm.last_ip:
+            hvars["ansible_host"] = vm.last_ip
+
         if is_windows:
             hvars.update({
+                "ansible_user": "sysop",
+                "student_username": vm.template.default_username if vm.template else ".\\Student",
                 "ansible_connection": "winrm",
                 "ansible_port": 5986,
                 "ansible_winrm_transport": "basic",
                 "ansible_winrm_scheme": "https",
                 "ansible_winrm_server_cert_validation": "ignore"
+            })
+        else:
+            hvars.update({
+                "ansible_user": vm.template.default_username if vm.template else "student",
             })
 
         inventory["_meta"]["hostvars"][host_alias] = hvars
