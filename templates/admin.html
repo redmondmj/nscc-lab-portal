@@ -488,13 +488,16 @@
             </div>
         </div>
 
-        <h4 style="color: #cbd5e1; font-size: 1rem; margin-bottom: 0.5rem;">Usage with Ansible Playbooks:</h4>
+        <h4 style="color: #cbd5e1; font-size: 1rem; margin-bottom: 0.5rem;">CLI Usage with Dynamic Inventory Script:</h4>
         <pre id="ansibleUsagePre" style="background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; color: #f1f5f9; font-family: monospace; font-size: 0.85rem; overflow-x: auto;">
-# Target student VMs by course group:
-ansible-playbook -i "/api/admin/ansible/inventory" playbooks/audit_lab.yml --limit osys1200
+# Configure your ANSIBLE_API_KEY (in your shell or .env):
+export ANSIBLE_API_KEY="your-secure-ansible-api-key"
 
-# Ping all active VMs in the fleet:
-ansible all -i "/api/admin/ansible/inventory" -m ping
+# Ping all active Windows VMs in the fleet (WinRM HTTPS automatically configured):
+ansible all -i ansible/inventory.py -m win_ping
+
+# Target student VMs by course group:
+ansible-playbook -i ansible/inventory.py playbooks/audit_lab.yml --limit osys1200
         </pre>
     </div>
 

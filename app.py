@@ -76,9 +76,18 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        api_key = os.environ.get("ANSIBLE_API_KEY")
+        if api_key:
+            auth_header = request.headers.get("X-API-Key") or request.headers.get("Authorization", "")
+            token = auth_header.replace("Bearer ", "").strip()
+            if token and token == api_key:
+                return f(*args, **kwargs)
+
         user = session.get("user")
         if os.environ.get("ENTRA_CLIENT_ID"):
             if not user:
+                if request.path.startswith("/api/"):
+                    return jsonify({"error": "Authentication required. Provide a valid session or API key."}), 401
                 return redirect(url_for("login", next=request.url))
             if user.get("role") not in ["instructor", "admin"]:
                 abort(403, description="Access denied. Instructor or administrator privileges required.")
@@ -1233,7 +1242,8 @@ def api_admin_ansible_inventory():
         else:
             inventory["ungrouped"]["hosts"].append(host_alias)
 
-        inventory["_meta"]["hostvars"][host_alias] = {
+        is_windows = vm.template.os_type.lower() == "windows" if (vm.template and vm.template.os_type) else True
+        hvars = {
             "ansible_host": vm.last_ip or "127.0.0.1",
             "ansible_user": vm.template.default_username if vm.template else ".\\Student",
             "proxmox_vmid": vm.vmid,
@@ -1241,6 +1251,16 @@ def api_admin_ansible_inventory():
             "student_id": vm.user_id,
             "status": vm.status
         }
+        if is_windows:
+            hvars.update({
+                "ansible_connection": "winrm",
+                "ansible_port": 5986,
+                "ansible_winrm_transport": "basic",
+                "ansible_winrm_scheme": "https",
+                "ansible_winrm_server_cert_validation": "ignore"
+            })
+
+        inventory["_meta"]["hostvars"][host_alias] = hvars
 
     return jsonify(inventory)
 

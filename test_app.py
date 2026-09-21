@@ -86,15 +86,90 @@ class TestProxmoxApp(unittest.TestCase):
         self.assertIn(b"Dynamic Ansible Inventory", res.data)
 
     def test_admin_ansible_inventory(self):
-        """Test dynamic Ansible inventory endpoint."""
+        """Test dynamic Ansible inventory endpoint with session authentication."""
         with self.client.session_transaction() as sess:
             sess["user"] = {"id": "W0999999", "name": "Prof. Smith", "role": "instructor"}
-        res = self.client.get("/api/admin/ansible/inventory")
-        self.assertEqual(res.status_code, 200)
-        data = res.get_json()
-        self.assertIn("_meta", data)
-        self.assertIn("all", data)
-        self.assertIn("osys1200", data)
+
+        with app.app_context():
+            from models import StudentVM, LabTemplate
+            tmpl = LabTemplate.query.filter_by(os_type="windows").first()
+            test_vm = StudentVM(
+                user_id="test.student",
+                course_id="osys1200",
+                template_id=tmpl.id if tmpl else None,
+                vmid=9999,
+                name="OSYS1200-TEST-STUDENT",
+                node="pve2",
+                status="running",
+                last_ip="10.20.1.55"
+            )
+            db.session.add(test_vm)
+            db.session.commit()
+
+        try:
+            res = self.client.get("/api/admin/ansible/inventory")
+            self.assertEqual(res.status_code, 200)
+            data = res.get_json()
+            self.assertIn("_meta", data)
+            self.assertIn("all", data)
+            self.assertIn("osys1200", data)
+            self.assertIn("OSYS1200-TEST-STUDENT", data["_meta"]["hostvars"])
+            hvars = data["_meta"]["hostvars"]["OSYS1200-TEST-STUDENT"]
+            self.assertEqual(hvars["ansible_host"], "10.20.1.55")
+            self.assertEqual(hvars["ansible_connection"], "winrm")
+            self.assertEqual(hvars["ansible_port"], 5986)
+            self.assertEqual(hvars["ansible_winrm_scheme"], "https")
+        finally:
+            with app.app_context():
+                vm_to_del = StudentVM.query.filter_by(vmid=9999).first()
+                if vm_to_del:
+                    db.session.delete(vm_to_del)
+                    db.session.commit()
+
+    def test_admin_ansible_inventory_with_api_key(self):
+        """Test accessing dynamic inventory with ANSIBLE_API_KEY via headers."""
+        import os
+        old_key = os.environ.get("ANSIBLE_API_KEY")
+        os.environ["ANSIBLE_API_KEY"] = "test-secret-ansible-key"
+        try:
+            # Test X-API-Key header
+            res1 = self.client.get("/api/admin/ansible/inventory", headers={"X-API-Key": "test-secret-ansible-key"})
+            self.assertEqual(res1.status_code, 200)
+            data1 = res1.get_json()
+            self.assertIn("_meta", data1)
+
+            # Test Authorization: Bearer header
+            res2 = self.client.get("/api/admin/ansible/inventory", headers={"Authorization": "Bearer test-secret-ansible-key"})
+            self.assertEqual(res2.status_code, 200)
+            data2 = res2.get_json()
+            self.assertIn("_meta", data2)
+        finally:
+            if old_key:
+                os.environ["ANSIBLE_API_KEY"] = old_key
+            else:
+                os.environ.pop("ANSIBLE_API_KEY", None)
+
+    def test_admin_ansible_inventory_unauthorized_under_sso(self):
+        """Test accessing API without session or key returns 401 JSON when ENTRA_CLIENT_ID is set."""
+        import os
+        old_client_id = os.environ.get("ENTRA_CLIENT_ID")
+        old_api_key = os.environ.get("ANSIBLE_API_KEY")
+        os.environ["ENTRA_CLIENT_ID"] = "mock-client-id"
+        os.environ["ANSIBLE_API_KEY"] = "valid-token"
+        try:
+            res = self.client.get("/api/admin/ansible/inventory", headers={"X-API-Key": "invalid-token"})
+            self.assertEqual(res.status_code, 401)
+            data = res.get_json()
+            self.assertIn("error", data)
+        finally:
+            if old_client_id:
+                os.environ["ENTRA_CLIENT_ID"] = old_client_id
+            else:
+                os.environ.pop("ENTRA_CLIENT_ID", None)
+            if old_api_key:
+                os.environ["ANSIBLE_API_KEY"] = old_api_key
+            else:
+                os.environ.pop("ANSIBLE_API_KEY", None)
 
     def test_admin_template_lifecycle(self):
         """Test adding, updating, and deleting a template via admin API."""
@@ -673,6 +748,36 @@ class TestProxmoxApp(unittest.TestCase):
         })
         self.assertEqual(res_404.status_code, 404)
 
+    def test_ansible_inventory_script_parsing(self):
+        """Test ansible/inventory.py script functions and response parsing."""
+        import sys
+        import json
+        sys.path.insert(0, "ansible")
+        try:
+            import inventory
+            defaults = inventory.load_env_defaults()
+            self.assertIn("LAB_PORTAL_URL", defaults)
+            self.assertIn("ANSIBLE_API_KEY", defaults)
+
+            # Test parsing with mock urlopen response
+            mock_inventory = {
+                "_meta": {"hostvars": {"host1": {"ansible_host": "10.20.1.10"}}},
+                "all": {"children": ["osys1200"]},
+                "osys1200": {"hosts": ["host1"]}
+            }
+            mock_resp = MagicMock()
+            mock_resp.read.return_value = json.dumps(mock_inventory).encode("utf-8")
+            mock_resp.headers.get_content_type.return_value = "application/json"
+            mock_resp.__enter__.return_value = mock_resp
+
+            with patch("urllib.request.urlopen", return_value=mock_resp):
+                result = inventory.fetch_inventory()
+                self.assertEqual(result, mock_inventory)
+        finally:
+            if "ansible" in sys.path:
+                sys.path.remove("ansible")
+
 
 if __name__ == "__main__":
     unittest.main()
+
