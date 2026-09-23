@@ -39,3 +39,6 @@ desktop.ini
 ansible/hosts.yml
 ansible/*vault*
 
+# Office temporary files
+~$*
+
