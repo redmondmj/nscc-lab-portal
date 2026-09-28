@@ -1,0 +1,65 @@
+---
+# OSYS3030 Challenge 1 Automated Audit Playbook
+# Server Setup, SSH Hardening & Firewall (Grade-A-Tron)
+#
+# Usage:
+#   ansible-playbook -i inventory.py audit-osys3030-c1.yml --limit osys3030 --ask-become-pass
+#   (or with SSH key + sudo password if configured)
+
+- name: Audit OSYS3030 Challenge 1 Configuration
+  hosts: "{{ target | default('osys3030') }}"
+  gather_facts: false
+  tasks:
+    - name: Ensure local results directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/audit_results"
+        state: directory
+      delegate_to: localhost
+      run_once: true
+
+    - name: Probe SSH port 2222 (hardened)
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 2222
+        timeout: 2
+        state: started
+      delegate_to: localhost
+      register: ssh_2222_check
+      ignore_errors: true
+
+    - name: Dynamically assign SSH port (2222 if open, fallback to 22)
+      ansible.builtin.set_fact:
+        ansible_port: "{{ 2222 if (ssh_2222_check is defined and not ssh_2222_check.failed) else 22 }}"
+
+    - name: Run Challenge 1 System Audit Script
+      ansible.builtin.shell: "{{ lookup('template', playbook_dir ~ '/audit-osys3030-c1.sh') }}"
+      become: true
+      register: audit_raw
+      changed_when: false
+
+    - name: Parse Audit Results
+      ansible.builtin.set_fact:
+        audit: "{{ audit_raw.stdout | from_json }}"
+
+    - name: Save Host Result to Local JSON
+      ansible.builtin.copy:
+        content: "{{ audit_raw.stdout }}"
+        dest: "{{ playbook_dir }}/audit_results/osys3030-c1-{{ inventory_hostname }}.json"
+      delegate_to: localhost
+
+    - name: Display Challenge 1 Audit Summary
+      ansible.builtin.debug:
+        msg: >-
+          [{{ audit.Student }} ({{ audit.Host }}:{{ ansible_port }})] Score: {{ audit.PassedCount }}/{{ audit.TotalChecks }} ({{ audit.ScorePercent }}%) |
+          SSHKey: {{ 'PASS' if audit.Checks.SSHKey.Pass else 'FAIL' }} |
+          NTP: {{ 'PASS' if audit.Checks.NTP.Pass else 'FAIL' }} |
+          UID0: {{ 'PASS' if audit.Checks.UID0.Pass else 'FAIL' }} |
+          BlankPass: {{ 'PASS' if audit.Checks.BlankPass.Pass else 'FAIL' }} |
+          Pkg: {{ 'PASS' if audit.Checks.UnattendedPkg.Pass else 'FAIL' }} |
+          Svc: {{ 'PASS' if audit.Checks.UnattendedSvc.Pass else 'FAIL' }} |
+          Port: {{ 'PASS' if audit.Checks.SSHPort.Pass else 'FAIL' }} |
+          Inet: {{ 'PASS' if audit.Checks.SSHAddressFamily.Pass else 'FAIL' }} |
+          Root: {{ 'PASS' if audit.Checks.SSHRootLogin.Pass else 'FAIL' }} |
+          PassAuth: {{ 'PASS' if audit.Checks.SSHPasswordAuth.Pass else 'FAIL' }} |
+          UFW: {{ 'PASS' if audit.Checks.UFWStatus.Pass else 'FAIL' }} |
+          Rule: {{ 'PASS' if audit.Checks.UFWRule.Pass else 'FAIL' }}
