@@ -1,0 +1,46 @@
+---
+# OSYS1200 Lab 3 Automated Audit Playbook
+# Managing Users and Groups
+#
+# Usage:
+#   ansible-playbook -i inventory.py playbooks/audit-lab3.yml --limit osys1200 --ask-pass
+
+- name: Audit OSYS1200 Lab 3 Configuration
+  hosts: "{{ target | default('osys1200') }}"
+  gather_facts: false
+  tasks:
+    - name: Ensure local results directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/audit_results"
+        state: directory
+      delegate_to: localhost
+      run_once: true
+
+    - name: Run Lab 3 System Audit Script
+      ansible.windows.win_shell: "{{ lookup('template', playbook_dir ~ '/audit-lab3.ps1') }}"
+      register: audit_raw
+      changed_when: false
+
+    - name: Parse Audit Results
+      ansible.builtin.set_fact:
+        audit: "{{ audit_raw.stdout | from_json }}"
+
+    - name: Save Host Result to Local JSON
+      ansible.builtin.copy:
+        content: "{{ audit_raw.stdout }}"
+        dest: "{{ playbook_dir }}/audit_results/lab3-{{ inventory_hostname }}.json"
+      delegate_to: localhost
+
+    - name: Display Lab 3 Audit Summary
+      ansible.builtin.debug:
+        msg: >-
+          [{{ audit.Student }} on {{ audit.Host }}] Score: {{ audit.PassedCount }}/{{ audit.TotalChecks }} ({{ audit.ScorePercent }}%) |
+          UserMatt: {{ 'PASS' if audit.Checks.UserMatt.Pass else 'FAIL' }} |
+          UserJacob: {{ 'PASS' if audit.Checks.UserJacob.Pass else 'FAIL' }} |
+          TestGroup: {{ 'PASS' if audit.Checks.TestGroup.Pass else 'FAIL' }} |
+          JacobRDP: {{ 'PASS' if audit.Checks.JacobRDP.Pass else 'FAIL' }} |
+          PSHistory: {{ 'PASS' if audit.Checks.PSHistory.Pass else 'FAIL' }} |
+          PublicLnk: {{ 'PASS' if audit.Checks.PublicLnk.Pass else 'FAIL' }} |
+          StartLayout: {{ 'PASS' if audit.Checks.StartLayout.Pass else 'FAIL' }} |
+          RedTeam: {{ 'PASS' if audit.Checks.RedTeam.Pass else 'FAIL' }} |
+          BlueTeam: {{ 'PASS' if audit.Checks.BlueTeam.Pass else 'FAIL' }}
