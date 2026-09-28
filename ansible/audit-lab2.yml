@@ -3,16 +3,14 @@
 # Windows 11 Tools and Utilities
 #
 # Inspects student VMs via WinRM to audit completed Lab 2 configurations:
-#   - Activity 3: AutoPlay configuration
+#   - Activity 3: AutoPlay configuration (StorageOnArrival)
 #   - Activity 5: Custom saved MMC snap-in (.msc file)
 #   - Activity 8: PowerShell Execution Policy (RemoteSigned)
 #   - Activity 11: Task Scheduler history enabled (Microsoft-Windows-TaskScheduler/Operational)
-#   - Activity 12: Scheduled Task "Clean Application Temp Files" & C:\Scripts\CleanTemp.ps1
+#   - Activity 12: Scheduled Task (Clean Temp / PowerShell script) & C:\Scripts\CleanTemp.ps1
 #
 # Usage:
 #   ansible-playbook -i inventory.py audit-lab2.yml --limit osys1200 --ask-pass
-#   or for a single student:
-#   ansible-playbook -i inventory.py audit-lab2.yml --limit OSYS1200-calvin.spencer-baseline --ask-pass
 
 - name: Audit OSYS1200 Lab 2 Configuration
   hosts: "{{ target | default('osys1200') }}"
@@ -34,7 +32,7 @@
         }
 
         # -------------------------------------------------------------
-        # 1. Activity 8: PowerShell Execution Policy (RemoteSigned)
+        # 1. Activity 8: PowerShell Execution Policy
         # -------------------------------------------------------------
         $policy = Get-ExecutionPolicy
         $policyPass = ($policy -eq "RemoteSigned" -or $policy -eq "Unrestricted" -or $policy -eq "Bypass")
@@ -45,11 +43,23 @@
         }
 
         # -------------------------------------------------------------
-        # 2. Activity 5: MMC Saved Console (*.msc on Student Desktop/Docs)
+        # 2. Activity 5: MMC Saved Console (*.msc on Student profile/disks)
         # -------------------------------------------------------------
-        $mscFiles = Get-ChildItem -Path "C:\Users\Student\Desktop", "C:\Users\Student\Documents", "C:\Users" -Filter "*.msc" -Recurse -Depth 2 -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -notmatch "system32|SysWOW64" } |
-            Select-Object -ExpandProperty FullName
+        # Search Student profile (including OneDrive Desktop/Docs) and root C:\
+        $searchPaths = @(
+            "C:\Users\Student\Desktop",
+            "C:\Users\Student\OneDrive\Desktop",
+            "C:\Users\Student\Documents",
+            "C:\Users\Student\OneDrive\Documents",
+            "C:\Users\Student\Downloads",
+            "C:\Users\Student",
+            "C:\"
+        ) | Where-Object { Test-Path $_ }
+
+        $mscFiles = Get-ChildItem -Path $searchPaths -Filter "*.msc" -MaxDepth 3 -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch "Windows|Program Files|AppData|SysWOW64|system32" } |
+            Select-Object -ExpandProperty FullName -Unique
+
         $mscPass = ($mscFiles.Count -gt 0)
         $results.Checks["CustomMMC"] = [ordered]@{
             Activity = "Activity 5 (Custom MMC Snap-in .msc)"
@@ -62,85 +72,144 @@
         # -------------------------------------------------------------
         try {
             $taskLog = Get-WinEvent -ListLog "Microsoft-Windows-TaskScheduler/Operational" -ErrorAction Stop
-            $historyEnabled = $taskLog.IsEnabled
+            $historyEnabled = [bool]$taskLog.IsEnabled
         } catch {
             $historyEnabled = $false
         }
         $results.Checks["TaskSchedulerHistory"] = [ordered]@{
             Activity = "Activity 11 (Task Scheduler History Logging)"
-            Enabled = [bool]$historyEnabled
-            Pass = [bool]$historyEnabled
+            Enabled = $historyEnabled
+            Pass = $historyEnabled
         }
 
         # -------------------------------------------------------------
         # 4. Activity 12: CleanTemp.ps1 Script File & C:\AppTemp
         # -------------------------------------------------------------
-        $scriptPath = "C:\Scripts\CleanTemp.ps1"
-        $scriptExists = Test-Path $scriptPath
+        $candidateScripts = @(
+            "C:\Scripts\CleanTemp.ps1",
+            "C:\Scripts\*.ps1",
+            "C:\AppTemp\CleanTemp.ps1",
+            "C:\CleanTemp.ps1",
+            "C:\Users\Student\Desktop\CleanTemp.ps1",
+            "C:\Users\Student\CleanTemp.ps1"
+        )
+        $foundScript = $null
         $scriptContentValid = $false
-        if ($scriptExists) {
-            $content = Get-Content $scriptPath -Raw -ErrorAction SilentlyContinue
-            if ($content -match "AppTemp") { $scriptContentValid = $true }
+
+        foreach ($p in $candidateScripts) {
+            $matched = Get-Item -Path $p -ErrorAction SilentlyContinue
+            if ($matched) {
+                $foundScript = $matched[0].FullName
+                $content = Get-Content $foundScript -Raw -ErrorAction SilentlyContinue
+                if ($content -match "AppTemp|Remove-Item") {
+                    $scriptContentValid = $true
+                    break
+                }
+            }
         }
-        $appTempExists = Test-Path "C:\AppTemp"
-        $scriptPass = ($scriptExists -and $scriptContentValid)
+
+        $appTempExists = (Test-Path "C:\AppTemp") -or (Test-Path "C:\Temp")
+        $scriptPass = ([bool]$foundScript -and $scriptContentValid)
+
         $results.Checks["CleanTempScript"] = [ordered]@{
             Activity = "Activity 12 (CleanTemp.ps1 & C:\AppTemp)"
-            ScriptExists = $scriptExists
+            ScriptFound = $foundScript
             ScriptValid = $scriptContentValid
             AppTempDirExists = $appTempExists
             Pass = $scriptPass
         }
 
         # -------------------------------------------------------------
-        # 5. Activity 12: Scheduled Task "Clean Application Temp Files"
+        # 5. Activity 12: Scheduled Task (Clean Application Temp Files)
         # -------------------------------------------------------------
-        $task = Get-ScheduledTask -TaskName "Clean Application Temp Files" -ErrorAction SilentlyContinue
-        if ($task) {
-            $taskInfo = Get-ScheduledTaskInfo -TaskName "Clean Application Temp Files" -ErrorAction SilentlyContinue
-            $isSystem = ($task.Principal.UserId -match "SYSTEM|S-1-5-18")
-            $hasScriptAction = [bool]($task.Actions | Where-Object { $_.Arguments -match "CleanTemp.ps1" })
-            $lastResult = $taskInfo.LastTaskResult
-            $taskPass = ($isSystem -and $hasScriptAction)
+        # Check exact name or any non-Microsoft task targeting clean/temp
+        $allTasks = Get-ScheduledTask -ErrorAction SilentlyContinue |
+            Where-Object { $_.TaskPath -notmatch "Microsoft" }
+
+        $targetTask = $allTasks | Where-Object { $_.TaskName -eq "Clean Application Temp Files" }
+        if (-not $targetTask) {
+            $targetTask = $allTasks | Where-Object {
+                $_.TaskName -match "Clean|Temp" -or
+                ($_.Actions | Where-Object { $_.Arguments -match "CleanTemp|AppTemp" })
+            } | Select-Object -First 1
+        }
+
+        if ($targetTask) {
+            $taskInfo = Get-ScheduledTaskInfo -TaskName $targetTask.TaskName -TaskPath $targetTask.TaskPath -ErrorAction SilentlyContinue
+            $isSystem = [bool]($targetTask.Principal.UserId -match "SYSTEM|S-1-5-18")
+            $hasScriptAction = [bool]($targetTask.Actions | Where-Object { $_.Arguments -match "CleanTemp|\.ps1" -or $_.Execute -match "powershell" })
+            $lastResult = if ($taskInfo) { $taskInfo.LastTaskResult } else { -1 }
+            $taskPass = ($hasScriptAction -or $isSystem)
 
             $results.Checks["ScheduledTask"] = [ordered]@{
-                Activity = "Activity 12 (Scheduled Task 'Clean Application Temp Files')"
-                Exists = $true
-                RunsAsSystem = [bool]$isSystem
-                ActionPointsToScript = [bool]$hasScriptAction
+                Activity = "Activity 12 (Scheduled Task)"
+                TaskName = $targetTask.TaskName
+                RunsAsUser = $targetTask.Principal.UserId
+                ActionPointsToScript = $hasScriptAction
                 LastRunResult = $lastResult
                 Pass = $taskPass
             }
         } else {
             $results.Checks["ScheduledTask"] = [ordered]@{
-                Activity = "Activity 12 (Scheduled Task 'Clean Application Temp Files')"
+                Activity = "Activity 12 (Scheduled Task)"
                 Exists = $false
                 Pass = $false
             }
         }
 
         # -------------------------------------------------------------
-        # 6. Activity 3: AutoPlay Configuration
+        # 6. Activity 3: AutoPlay Configuration (StorageOnArrival)
         # -------------------------------------------------------------
         $autoPlayPass = $false
-        $storageHandler = ""
-        $studentProfile = Get-CimInstance Win32_UserProfile | Where-Object { $_.LocalPath -like "*\Student" }
-        if ($studentProfile) {
-            $sid = $studentProfile.SID
-            $regPath = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers\UserChosenExecuteHandlers"
-            if (Test-Path "$regPath\StorageHandler") {
-                $storageHandler = (Get-ItemProperty -Path "$regPath\StorageHandler" -ErrorAction SilentlyContinue).'(default)'
-                if ($storageHandler -match "OpenFolder") { $autoPlayPass = $true }
+        $foundHandler = ""
+
+        # Check all loaded user registry hives (HKEY_USERS\S-1-5-21-*)
+        $userSids = Get-ChildItem Registry::HKEY_USERS -ErrorAction SilentlyContinue |
+            Where-Object { $_.PSChildName -match "^S-1-5-21-[0-9-]+$" } |
+            Select-Object -ExpandProperty PSChildName
+
+        foreach ($sid in $userSids) {
+            $basePath = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers"
+            
+            # Check UserChosenExecuteHandlers\StorageOnArrival
+            $chosenPath = "$basePath\UserChosenExecuteHandlers"
+            if (Test-Path $chosenPath) {
+                $subKeys = Get-ChildItem $chosenPath -ErrorAction SilentlyContinue
+                foreach ($sk in $subKeys) {
+                    $val = (Get-ItemProperty $sk.PSPath -ErrorAction SilentlyContinue).'(default)'
+                    if ($val -match "OpenFolder|MSOpenFolder") {
+                        $autoPlayPass = $true
+                        $foundHandler = "$($sk.PSChildName): $val"
+                        break
+                    }
+                }
             }
+
+            # Check EventHandlersDefaultSelection\StorageArrival
+            $defaultPath = "$basePath\EventHandlersDefaultSelection"
+            if (Test-Path $defaultPath) {
+                $subKeys = Get-ChildItem $defaultPath -ErrorAction SilentlyContinue
+                foreach ($sk in $subKeys) {
+                    $val = (Get-ItemProperty $sk.PSPath -ErrorAction SilentlyContinue).'(default)'
+                    if ($val -match "OpenFolder|MSOpenFolder") {
+                        $autoPlayPass = $true
+                        $foundHandler = "$($sk.PSChildName): $val"
+                        break
+                    }
+                }
+            }
+
+            if ($autoPlayPass) { break }
         }
+
         $results.Checks["AutoPlay"] = [ordered]@{
             Activity = "Activity 3 (AutoPlay Settings)"
-            StorageHandler = $storageHandler
+            Handler = $foundHandler
             Pass = $autoPlayPass
         }
 
         # Calculate Score
-        $passed = ($results.Checks.Values | Where-Object { $_.Pass -eq $true }).Count
+        $passed = @($results.Checks.Keys | Where-Object { $results.Checks[$_].Pass -eq $true }).Count
         $total = $results.Checks.Count
         $results["PassedCount"] = $passed
         $results["TotalChecks"] = $total

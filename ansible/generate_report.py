@@ -82,12 +82,6 @@ def main():
             else:
                 audited_hosts.add(host)
 
-            passed_count = data.get("PassedCount", 0)
-            total_checks = data.get("TotalChecks", 6)
-            score_pct = data.get("ScorePercent", 0)
-            scores.append(score_pct)
-            score_str = f"{passed_count}/{total_checks} ({score_pct}%)"
-
             checks = data.get("Checks", {})
             exec_policy = "PASS" if checks.get("ExecutionPolicy", {}).get("Pass") else "FAIL"
             custom_mmc = "PASS" if checks.get("CustomMMC", {}).get("Pass") else "FAIL"
@@ -95,6 +89,13 @@ def main():
             script = "PASS" if checks.get("CleanTempScript", {}).get("Pass") else "FAIL"
             task = "PASS" if checks.get("ScheduledTask", {}).get("Pass") else "FAIL"
             autoplay = "PASS" if checks.get("AutoPlay", {}).get("Pass") else "FAIL"
+
+            eval_list = [exec_policy, custom_mmc, task_hist, script, task, autoplay]
+            passed_count = eval_list.count("PASS")
+            total_checks = len(eval_list)
+            score_pct = round((passed_count / total_checks) * 100, 1)
+            scores.append(score_pct)
+            score_str = f"{passed_count}/{total_checks} ({score_pct}%)"
 
             rows.append({
                 "student": student,
