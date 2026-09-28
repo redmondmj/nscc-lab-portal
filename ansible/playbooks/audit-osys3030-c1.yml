@@ -9,6 +9,8 @@
 - name: Audit OSYS3030 Challenge 1 Configuration
   hosts: "{{ target | default('osys3030') }}"
   gather_facts: false
+  vars:
+    ansible_remote_tmp: /tmp/.ansible-{{ ansible_user }}
   tasks:
     - name: Ensure local results directory exists
       ansible.builtin.file:

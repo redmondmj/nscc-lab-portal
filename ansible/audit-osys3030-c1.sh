@@ -111,7 +111,7 @@ for val in "$CHECK_SSH_KEY" "$CHECK_NTP" "$CHECK_UID0" "$CHECK_BLANK_PASS" \
            "$CHECK_SSH_AF" "$CHECK_SSH_ROOT" "$CHECK_SSH_PASS_AUTH" \
            "$CHECK_UFW_STATUS" "$CHECK_UFW_RULE"; do
     if [ "$val" = "true" ]; then
-        ((PASSED_COUNT++))
+        PASSED_COUNT=$((PASSED_COUNT + 1))
     fi
 done
 
