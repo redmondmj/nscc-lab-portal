@@ -99,7 +99,7 @@
         if ($task) {
             $taskInfo = Get-ScheduledTaskInfo -TaskName "Clean Application Temp Files" -ErrorAction SilentlyContinue
             $isSystem = ($task.Principal.UserId -match "SYSTEM|S-1-5-18")
-            $hasScriptAction = ($task.Actions | Where-Object { $_.Arguments -match "CleanTemp.ps1" }) ? $true : $false
+            $hasScriptAction = [bool]($task.Actions | Where-Object { $_.Arguments -match "CleanTemp.ps1" })
             $lastResult = $taskInfo.LastTaskResult
             $taskPass = ($isSystem -and $hasScriptAction)
 
