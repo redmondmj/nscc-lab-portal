@@ -3,8 +3,8 @@
 # Server Setup, SSH Hardening & Firewall (Grade-A-Tron)
 #
 # Usage:
-#   ansible-playbook -i inventory.py audit-osys3030-c1.yml --limit osys3030 --ask-become-pass
-#   (or with SSH key + sudo password if configured)
+#   ansible-playbook -i inventory.py audit-osys3030-c1.yml --limit osys3030 -k -K
+#   (Prompts for SSH password with -k and sudo/become password with -K)
 
 - name: Audit OSYS3030 Challenge 1 Configuration
   hosts: "{{ target | default('osys3030') }}"
@@ -16,6 +16,15 @@
         state: directory
       delegate_to: localhost
       run_once: true
+
+    - name: Skip stopped VMs or hosts without an assigned IP
+      ansible.builtin.meta: end_host
+      when: >
+        ansible_host is not defined or
+        ansible_host == '' or
+        ansible_host == inventory_hostname or
+        ansible_host == 'localhost' or
+        (status is defined and status != 'running')
 
     - name: Probe SSH port 2222 (hardened)
       ansible.builtin.wait_for:
@@ -36,16 +45,24 @@
       become: true
       register: audit_raw
       changed_when: false
+      ignore_unreachable: true
+
+    - name: Warn on Unreachable Hosts
+      ansible.builtin.debug:
+        msg: "[WARNING] Host {{ inventory_hostname }} ({{ ansible_host }}:{{ ansible_port }}) was unreachable: {{ audit_raw.msg | default('Permission denied / no matching SSH key') }}"
+      when: audit_raw.unreachable is defined and audit_raw.unreachable
 
     - name: Parse Audit Results
       ansible.builtin.set_fact:
         audit: "{{ audit_raw.stdout | from_json }}"
+      when: audit_raw.stdout is defined and audit_raw.stdout != ''
 
     - name: Save Host Result to Local JSON
       ansible.builtin.copy:
         content: "{{ audit_raw.stdout }}"
         dest: "{{ playbook_dir }}/audit_results/osys3030-c1-{{ inventory_hostname }}.json"
       delegate_to: localhost
+      when: audit is defined
 
     - name: Display Challenge 1 Audit Summary
       ansible.builtin.debug:
@@ -63,3 +80,4 @@
           PassAuth: {{ 'PASS' if audit.Checks.SSHPasswordAuth.Pass else 'FAIL' }} |
           UFW: {{ 'PASS' if audit.Checks.UFWStatus.Pass else 'FAIL' }} |
           Rule: {{ 'PASS' if audit.Checks.UFWRule.Pass else 'FAIL' }}
+      when: audit is defined
