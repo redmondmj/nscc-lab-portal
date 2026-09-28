@@ -1,0 +1,172 @@
+---
+# OSYS1200 Lab 2 Automated Audit Playbook
+# Windows 11 Tools and Utilities
+#
+# Inspects student VMs via WinRM to audit completed Lab 2 configurations:
+#   - Activity 3: AutoPlay configuration
+#   - Activity 5: Custom saved MMC snap-in (.msc file)
+#   - Activity 8: PowerShell Execution Policy (RemoteSigned)
+#   - Activity 11: Task Scheduler history enabled (Microsoft-Windows-TaskScheduler/Operational)
+#   - Activity 12: Scheduled Task "Clean Application Temp Files" & C:\Scripts\CleanTemp.ps1
+#
+# Usage:
+#   ansible-playbook -i inventory.py playbooks/audit-lab2.yml --limit osys1200 --ask-pass
+#   or for a single student:
+#   ansible-playbook -i inventory.py playbooks/audit-lab2.yml --limit OSYS1200-calvin.spencer-baseline --ask-pass
+
+- name: Audit OSYS1200 Lab 2 Configuration
+  hosts: "{{ target | default('osys1200') }}"
+  gather_facts: false
+  tasks:
+    - name: Ensure local results directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/audit_results"
+        state: directory
+      delegate_to: localhost
+      run_once: true
+
+    - name: Run Lab 2 System Audit Script
+      ansible.windows.win_shell: |
+        $results = [ordered]@{
+            Host = $env:COMPUTERNAME
+            Student = "{{ student_id | default('Unknown') }}"
+            Checks = [ordered]@{}
+        }
+
+        # -------------------------------------------------------------
+        # 1. Activity 8: PowerShell Execution Policy (RemoteSigned)
+        # -------------------------------------------------------------
+        $policy = Get-ExecutionPolicy
+        $policyPass = ($policy -eq "RemoteSigned" -or $policy -eq "Unrestricted" -or $policy -eq "Bypass")
+        $results.Checks["ExecutionPolicy"] = [ordered]@{
+            Activity = "Activity 8 (PowerShell Execution Policy)"
+            Status = "$policy"
+            Pass = $policyPass
+        }
+
+        # -------------------------------------------------------------
+        # 2. Activity 5: MMC Saved Console (*.msc on Student Desktop/Docs)
+        # -------------------------------------------------------------
+        $mscFiles = Get-ChildItem -Path "C:\Users\Student\Desktop", "C:\Users\Student\Documents", "C:\Users" -Filter "*.msc" -Recurse -Depth 2 -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch "system32|SysWOW64" } |
+            Select-Object -ExpandProperty FullName
+        $mscPass = ($mscFiles.Count -gt 0)
+        $results.Checks["CustomMMC"] = [ordered]@{
+            Activity = "Activity 5 (Custom MMC Snap-in .msc)"
+            Files = if ($mscFiles) { @($mscFiles) } else { @() }
+            Pass = $mscPass
+        }
+
+        # -------------------------------------------------------------
+        # 3. Activity 11: Task Scheduler History Enabled
+        # -------------------------------------------------------------
+        try {
+            $taskLog = Get-WinEvent -ListLog "Microsoft-Windows-TaskScheduler/Operational" -ErrorAction Stop
+            $historyEnabled = $taskLog.IsEnabled
+        } catch {
+            $historyEnabled = $false
+        }
+        $results.Checks["TaskSchedulerHistory"] = [ordered]@{
+            Activity = "Activity 11 (Task Scheduler History Logging)"
+            Enabled = [bool]$historyEnabled
+            Pass = [bool]$historyEnabled
+        }
+
+        # -------------------------------------------------------------
+        # 4. Activity 12: CleanTemp.ps1 Script File & C:\AppTemp
+        # -------------------------------------------------------------
+        $scriptPath = "C:\Scripts\CleanTemp.ps1"
+        $scriptExists = Test-Path $scriptPath
+        $scriptContentValid = $false
+        if ($scriptExists) {
+            $content = Get-Content $scriptPath -Raw -ErrorAction SilentlyContinue
+            if ($content -match "AppTemp") { $scriptContentValid = $true }
+        }
+        $appTempExists = Test-Path "C:\AppTemp"
+        $scriptPass = ($scriptExists -and $scriptContentValid)
+        $results.Checks["CleanTempScript"] = [ordered]@{
+            Activity = "Activity 12 (CleanTemp.ps1 & C:\AppTemp)"
+            ScriptExists = $scriptExists
+            ScriptValid = $scriptContentValid
+            AppTempDirExists = $appTempExists
+            Pass = $scriptPass
+        }
+
+        # -------------------------------------------------------------
+        # 5. Activity 12: Scheduled Task "Clean Application Temp Files"
+        # -------------------------------------------------------------
+        $task = Get-ScheduledTask -TaskName "Clean Application Temp Files" -ErrorAction SilentlyContinue
+        if ($task) {
+            $taskInfo = Get-ScheduledTaskInfo -TaskName "Clean Application Temp Files" -ErrorAction SilentlyContinue
+            $isSystem = ($task.Principal.UserId -match "SYSTEM|S-1-5-18")
+            $hasScriptAction = ($task.Actions | Where-Object { $_.Arguments -match "CleanTemp.ps1" }) ? $true : $false
+            $lastResult = $taskInfo.LastTaskResult
+            $taskPass = ($isSystem -and $hasScriptAction)
+
+            $results.Checks["ScheduledTask"] = [ordered]@{
+                Activity = "Activity 12 (Scheduled Task 'Clean Application Temp Files')"
+                Exists = $true
+                RunsAsSystem = [bool]$isSystem
+                ActionPointsToScript = [bool]$hasScriptAction
+                LastRunResult = $lastResult
+                Pass = $taskPass
+            }
+        } else {
+            $results.Checks["ScheduledTask"] = [ordered]@{
+                Activity = "Activity 12 (Scheduled Task 'Clean Application Temp Files')"
+                Exists = $false
+                Pass = $false
+            }
+        }
+
+        # -------------------------------------------------------------
+        # 6. Activity 3: AutoPlay Configuration
+        # -------------------------------------------------------------
+        $autoPlayPass = $false
+        $storageHandler = ""
+        $studentProfile = Get-CimInstance Win32_UserProfile | Where-Object { $_.LocalPath -like "*\Student" }
+        if ($studentProfile) {
+            $sid = $studentProfile.SID
+            $regPath = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers\UserChosenExecuteHandlers"
+            if (Test-Path "$regPath\StorageHandler") {
+                $storageHandler = (Get-ItemProperty -Path "$regPath\StorageHandler" -ErrorAction SilentlyContinue).'(default)'
+                if ($storageHandler -match "OpenFolder") { $autoPlayPass = $true }
+            }
+        }
+        $results.Checks["AutoPlay"] = [ordered]@{
+            Activity = "Activity 3 (AutoPlay Settings)"
+            StorageHandler = $storageHandler
+            Pass = $autoPlayPass
+        }
+
+        # Calculate Score
+        $passed = ($results.Checks.Values | Where-Object { $_.Pass -eq $true }).Count
+        $total = $results.Checks.Count
+        $results["PassedCount"] = $passed
+        $results["TotalChecks"] = $total
+        $results["ScorePercent"] = [math]::Round(($passed / $total) * 100, 1)
+
+        $results | ConvertTo-Json -Depth 5
+      register: audit_raw
+      changed_when: false
+
+    - name: Parse Audit Results
+      ansible.builtin.set_fact:
+        audit: "{{ audit_raw.stdout | from_json }}"
+
+    - name: Save Host Result to Local JSON
+      ansible.builtin.copy:
+        content: "{{ audit_raw.stdout }}"
+        dest: "{{ playbook_dir }}/audit_results/lab2-{{ inventory_hostname }}.json"
+      delegate_to: localhost
+
+    - name: Display Lab 2 Audit Summary
+      ansible.builtin.debug:
+        msg: >-
+          [{{ audit.Student }} on {{ audit.Host }}] Score: {{ audit.PassedCount }}/{{ audit.TotalChecks }} ({{ audit.ScorePercent }}%) |
+          ExecPolicy: {{ 'PASS' if audit.Checks.ExecutionPolicy.Pass else 'FAIL' }} |
+          CustomMMC: {{ 'PASS' if audit.Checks.CustomMMC.Pass else 'FAIL' }} |
+          TaskHistory: {{ 'PASS' if audit.Checks.TaskSchedulerHistory.Pass else 'FAIL' }} |
+          CleanTempScript: {{ 'PASS' if audit.Checks.CleanTempScript.Pass else 'FAIL' }} |
+          ScheduledTask: {{ 'PASS' if audit.Checks.ScheduledTask.Pass else 'FAIL' }} |
+          AutoPlay: {{ 'PASS' if audit.Checks.AutoPlay.Pass else 'FAIL' }}
