@@ -141,11 +141,62 @@ def main():
     md_output.append(f"- **Offline / Unreachable VMs:** {len(offline_rows)}")
     md_output.append(f"- **Class Average (Audited):** {avg_score}%\n")
 
-    md_output.append("| Student | Host | Score | Act 8 (Exec Policy) | Act 5 (MMC .msc) | Act 11 (Task History) | Act 12 (Clean Script) | Act 12 (Sched Task) | Act 3 (AutoPlay) |")
-    md_output.append("|:---|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|")
+    headers = [
+        "Student",
+        "Host",
+        "Score",
+        "Act 8 (Exec Policy)",
+        "Act 5 (MMC .msc)",
+        "Act 11 (Task History)",
+        "Act 12 (Clean Script)",
+        "Act 12 (Sched Task)",
+        "Act 3 (AutoPlay)"
+    ]
 
+    table_data = []
     for r in all_rows:
-        md_output.append(f"| {r['student']} | `{r['host']}` | **{r['score']}** | {r['exec']} | {r['mmc']} | {r['hist']} | {r['script']} | {r['task']} | {r['auto']} |")
+        host_display = f"`{r['host']}`"
+        score_display = f"**{r['score']}**" if r['status'] == 'ONLINE' else r['score']
+        table_data.append([
+            r['student'],
+            host_display,
+            score_display,
+            r['exec'],
+            r['mmc'],
+            r['hist'],
+            r['script'],
+            r['task'],
+            r['auto']
+        ])
+
+    col_widths = []
+    for col_idx in range(len(headers)):
+        max_w = len(headers[col_idx])
+        for row in table_data:
+            max_w = max(max_w, len(str(row[col_idx])))
+        col_widths.append(max_w)
+
+    header_line = "| " + " | ".join(headers[i].ljust(col_widths[i]) for i in range(len(headers))) + " |"
+    sep_cols = []
+    for i, w in enumerate(col_widths):
+        if i < 2:
+            sep_cols.append(":" + "-" * (w - 1))
+        else:
+            sep_cols.append(":" + "-" * (w - 2) + ":")
+    sep_line = "| " + " | ".join(sep_cols) + " |"
+
+    md_output.append(header_line)
+    md_output.append(sep_line)
+
+    for row in table_data:
+        cells = []
+        for i, val in enumerate(row):
+            w = col_widths[i]
+            if i < 2:
+                cells.append(str(val).ljust(w))
+            else:
+                cells.append(str(val).center(w))
+        md_output.append("| " + " | ".join(cells) + " |")
 
     report_content = "\n".join(md_output)
     report_file = os.path.join(os.path.dirname(__file__), "audit_report_lab2.md")
