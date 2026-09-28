@@ -17,7 +17,7 @@
       run_once: true
 
     - name: Run Lab 2 System Audit Script
-      ansible.windows.win_shell: "{{ lookup('file', playbook_dir ~ '/audit-lab2.ps1') }}"
+      ansible.windows.win_shell: "{{ lookup('template', playbook_dir ~ '/audit-lab2.ps1') }}"
       register: audit_raw
       changed_when: false
 

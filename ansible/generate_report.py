@@ -68,19 +68,20 @@ def main():
             with open(fpath, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
-            student = data.get("Student", "Unknown")
-            host = data.get("Host", os.path.basename(fpath).replace("lab2-", "").replace(".json", ""))
+            file_host = os.path.basename(fpath).replace("lab2-", "").replace(".json", "")
             
-            # Match host name back to inventory host
-            matched_inv_host = None
-            for ih in inv_hosts:
-                if ih in fpath or ih.lower() == host.lower():
-                    matched_inv_host = ih
-                    break
-            if matched_inv_host:
-                audited_hosts.add(matched_inv_host)
-            else:
-                audited_hosts.add(host)
+            student = data.get("Student", "Unknown")
+            if not student or "{{" in student or student == "Unknown":
+                if file_host in inv_hosts:
+                    student = inv_hosts[file_host].get("student_id", file_host)
+                elif "OSYS1200-" in file_host:
+                    student = file_host.replace("OSYS1200-", "").replace("-baseline", "")
+                else:
+                    student = file_host
+
+            # Host display
+            host = file_host
+            audited_hosts.add(file_host)
 
             checks = data.get("Checks", {})
             exec_policy = "PASS" if checks.get("ExecutionPolicy", {}).get("Pass") else "FAIL"
