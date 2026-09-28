@@ -144,30 +144,27 @@ def main():
 
     headers = [
         "Student",
-        "Host",
         "Score",
-        "Act 8 (Exec Policy)",
-        "Act 5 (MMC .msc)",
-        "Act 11 (Task History)",
-        "Act 12 (Clean Script)",
-        "Act 12 (Sched Task)",
-        "Act 3 (AutoPlay)"
+        "Act 3 (Auto)",
+        "Act 5 (MMC)",
+        "Act 8 (Exec)",
+        "Act 11 (Hist)",
+        "Act 12 (Script)",
+        "Act 12 (Task)"
     ]
 
     table_data = []
     for r in all_rows:
-        host_display = f"`{r['host']}`"
         score_display = f"**{r['score']}**" if r['status'] == 'ONLINE' else r['score']
         table_data.append([
             r['student'],
-            host_display,
             score_display,
-            r['exec'],
+            r['auto'],
             r['mmc'],
+            r['exec'],
             r['hist'],
             r['script'],
-            r['task'],
-            r['auto']
+            r['task']
         ])
 
     col_widths = []
@@ -180,7 +177,7 @@ def main():
     header_line = "| " + " | ".join(headers[i].ljust(col_widths[i]) for i in range(len(headers))) + " |"
     sep_cols = []
     for i, w in enumerate(col_widths):
-        if i < 2:
+        if i == 0:
             sep_cols.append(":" + "-" * (w - 1))
         else:
             sep_cols.append(":" + "-" * (w - 2) + ":")
@@ -193,7 +190,7 @@ def main():
         cells = []
         for i, val in enumerate(row):
             w = col_widths[i]
-            if i < 2:
+            if i == 0:
                 cells.append(str(val).ljust(w))
             else:
                 cells.append(str(val).center(w))
