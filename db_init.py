@@ -118,10 +118,6 @@ def seed_database(app):
                         if not Enrollment.query.filter_by(user_id=user.id, course_id=cid).first():
                             db.session.add(Enrollment(user_id=user.id, course_id=cid))
 
-            for vm in StudentVM.query.all():
-                if not Enrollment.query.filter_by(user_id=vm.user_id, course_id=vm.course_id).first():
-                    db.session.add(Enrollment(user_id=vm.user_id, course_id=vm.course_id))
-
             db.session.commit()
             logger.info("Database initialized and seeded successfully with enrollments.")
         except Exception as e:
@@ -132,6 +128,7 @@ def sync_existing_vms_from_proxmox(app, proxmox):
     """
     Scans the Proxmox cluster for existing VMs matching course conventions
     and registers them into the database so existing student VMs are preserved.
+    Excludes master lab templates and purges template entries from StudentVM.
     """
     if not proxmox:
         return
@@ -140,14 +137,42 @@ def sync_existing_vms_from_proxmox(app, proxmox):
         try:
             all_vms = proxmox.cluster.resources.get(type="vm")
             courses = {c.code.lower(): c for c in Course.query.all()}
+            templates = LabTemplate.query.all()
+            known_template_vmids = {int(t.template_vmid) for t in templates if t.template_vmid}
+
+            # 1. Purge any templates that were erroneously ingested into StudentVM
+            if known_template_vmids:
+                bogus_vms = StudentVM.query.filter(
+                    (StudentVM.vmid.in_(known_template_vmids)) | 
+                    (db.func.lower(StudentVM.name).like("%template%"))
+                ).all()
+                if bogus_vms:
+                    for bvm in bogus_vms:
+                        logger.warning(f"Purging template VM from StudentVM table: {bvm.name} (VMID {bvm.vmid})")
+                        db.session.delete(bvm)
+                    db.session.commit()
+
+            # Clean up dummy 'Template' user if created by past sync
+            dummy_template_user = db.session.get(User, "Template")
+            if dummy_template_user and not dummy_template_user.vms:
+                db.session.delete(dummy_template_user)
+                db.session.commit()
 
             for vm in all_vms:
                 if vm.get("type") != "qemu":
                     continue
 
+                # Skip Proxmox templates
+                if vm.get("template") == 1 or vm.get("template") is True:
+                    continue
+
+                vmid = int(vm.get("vmid"))
+                if vmid in known_template_vmids:
+                    continue
+
                 name = vm.get("name", "")
-                vmid = vm.get("vmid")
-                node = vm.get("node")
+                if "template" in name.lower():
+                    continue
 
                 # Check if name contains a known course code (e.g. OSYS1200 or NETW2710)
                 matched_course = None
@@ -164,6 +189,10 @@ def sync_existing_vms_from_proxmox(app, proxmox):
                         parts = name.split("-")
                         student_identifier = parts[1] if len(parts) > 1 else f"user_{vmid}"
                         
+                        # Never create user for template
+                        if "template" in student_identifier.lower():
+                            continue
+
                         user = User.query.get(student_identifier)
                         if not user:
                             # Try fuzzy match against known users (e.g. 'RobertAtkinson' matching 'robert.atkinson')
@@ -195,9 +224,6 @@ def sync_existing_vms_from_proxmox(app, proxmox):
                                 status=vm.get("status", "stopped")
                             )
                             db.session.add(record)
-
-                            if not Enrollment.query.filter_by(user_id=user.id, course_id=matched_course.id).first():
-                                db.session.add(Enrollment(user_id=user.id, course_id=matched_course.id))
 
             db.session.commit()
             logger.info("Successfully synchronized existing cluster VMs with database.")

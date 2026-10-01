@@ -1,7 +1,7 @@
 # Deploy proxmox-getvm-app to nscc-docker-host
 $ErrorActionPreference = "Stop"
 
-$RemoteHost = "nscc-docker-host"
+$RemoteHost = "nscc-docker"
 $RemoteDir = "~/proxmox-getvm-app"
 
 Write-Host "Syncing files to ${RemoteHost}:${RemoteDir}..." -ForegroundColor Cyan

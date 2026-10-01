@@ -1187,14 +1187,21 @@ ansible-playbook -i ansible/inventory.py playbooks/audit_lab.yml --limit osys120
     }
 
     function filterFleetTable() {
-        const q = document.getElementById("fleetSearch").value.toLowerCase();
-        const course = document.getElementById("courseFilter").value;
+        const searchInput = document.getElementById("fleetSearch");
+        const courseSelect = document.getElementById("courseFilter");
+        const q = (searchInput ? searchInput.value : "").toLowerCase();
+        const course = courseSelect ? courseSelect.value : "";
         const rows = document.querySelectorAll("#fleetTableBody tr");
 
+        try {
+            sessionStorage.setItem("admin_fleet_course_filter", course);
+            sessionStorage.setItem("admin_fleet_search_filter", q);
+        } catch(e) {}
+
         rows.forEach(row => {
-            const text = row.getAttribute("data-search").toLowerCase();
-            const rowCourse = row.getAttribute("data-course");
-            const matchesQuery = text.includes(q);
+            const text = (row.getAttribute("data-search") || "").toLowerCase();
+            const rowCourse = row.getAttribute("data-course") || "";
+            const matchesQuery = !q || text.includes(q);
             const matchesCourse = (!course || rowCourse === course);
 
             row.style.display = (matchesQuery && matchesCourse) ? "" : "none";
@@ -1739,6 +1746,21 @@ Default Login Username: ${user}`;
         if (activeTab && document.getElementById(activeTab)) {
             switchTab(activeTab);
         }
+
+        // Restore fleet table course and search filters
+        try {
+            const savedCourse = sessionStorage.getItem("admin_fleet_course_filter");
+            const savedSearch = sessionStorage.getItem("admin_fleet_search_filter");
+            const courseSelect = document.getElementById("courseFilter");
+            const searchInput = document.getElementById("fleetSearch");
+            if (courseSelect && savedCourse !== null) {
+                courseSelect.value = savedCourse;
+            }
+            if (searchInput && savedSearch !== null) {
+                searchInput.value = savedSearch;
+            }
+            filterFleetTable();
+        } catch(e) {}
     });
 </script>
 {% endblock %}

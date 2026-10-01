@@ -783,7 +783,79 @@ class TestProxmoxApp(unittest.TestCase):
             if "ansible" in sys.path:
                 sys.path.remove("ansible")
 
+    def test_unenrolled_student_blocked_from_course_portal(self):
+        """Test that a student not enrolled in a course receives a 403 on course portal."""
+        with app.app_context():
+            u = User(id="unenrolled.student", name="Unenrolled Student", role="student")
+            db.session.merge(u)
+            c = Course(id="osys3030", code="OSYS3030", name="Linux OS")
+            db.session.merge(c)
+            # Ensure not enrolled
+            enr = Enrollment.query.filter_by(user_id="unenrolled.student", course_id="osys3030").first()
+            if enr:
+                db.session.delete(enr)
+            db.session.commit()
+
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "unenrolled.student", "name": "Unenrolled Student", "role": "student"}
+
+        res = self.client.get("/osys3030")
+        self.assertEqual(res.status_code, 403)
+        self.assertIn(b"Course Enrollment Required", res.data)
+
+    def test_unenrolled_student_blocked_from_templates_and_provisioning(self):
+        """Test that a student not enrolled in a course cannot fetch templates or provision VMs."""
+        with app.app_context():
+            u = User(id="rogue.student", name="Rogue Student", role="student")
+            db.session.merge(u)
+            c = Course(id="osys3030", code="OSYS3030", name="Linux OS")
+            db.session.merge(c)
+            t = LabTemplate(id=999, course_id="osys3030", name="Linux Base", slug="linux-base", template_vmid=3030, is_published=True)
+            db.session.merge(t)
+            # Ensure not enrolled
+            enr = Enrollment.query.filter_by(user_id="rogue.student", course_id="osys3030").first()
+            if enr:
+                db.session.delete(enr)
+            db.session.commit()
+
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "rogue.student", "name": "Rogue Student", "role": "student"}
+
+        # 1. Templates listing should return 403
+        res_tmpl = self.client.get("/api/osys3030/templates")
+        self.assertEqual(res_tmpl.status_code, 403)
+
+        # 2. Provisioning should return 403
+        res_prov = self.client.post("/api/osys3030/provision", json={
+            "student_id": "rogue.student",
+            "template_id": 999
+        })
+        self.assertEqual(res_prov.status_code, 403)
+        data = res_prov.get_json()
+        self.assertIn("not enrolled", data["error"].lower())
+
+    def test_enrolled_student_allowed_access(self):
+        """Test that an enrolled student can access the course portal and templates."""
+        with app.app_context():
+            u = User(id="valid.student", name="Valid Student", role="student")
+            db.session.merge(u)
+            c = Course(id="osys1200", code="OSYS1200", name="Windows OS")
+            db.session.merge(c)
+            enr = Enrollment.query.filter_by(user_id="valid.student", course_id="osys1200").first()
+            if not enr:
+                db.session.add(Enrollment(user_id="valid.student", course_id="osys1200"))
+            db.session.commit()
+
+        with self.client.session_transaction() as sess:
+            sess["user"] = {"id": "valid.student", "name": "Valid Student", "role": "student"}
+
+        res = self.client.get("/osys1200")
+        self.assertEqual(res.status_code, 200)
+
+        res_tmpl = self.client.get("/api/osys1200/templates")
+        self.assertEqual(res_tmpl.status_code, 200)
 
 if __name__ == "__main__":
     unittest.main()
+
 

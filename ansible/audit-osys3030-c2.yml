@@ -1,0 +1,85 @@
+---
+# OSYS3030 Challenge 2 Automated Audit Playbook
+# Multi-Homed Network Configuration & Jumbo Frames (Grade-A-Tron)
+#
+# Usage:
+#   ansible-playbook -i inventory.py audit-osys3030-c2.yml --limit osys3030 -k -K
+#   (Prompts for SSH password with -k and sudo/become password with -K)
+
+- name: Audit OSYS3030 Challenge 2 Multi-Homed Configuration
+  hosts: "{{ target | default('osys3030') }}"
+  gather_facts: false
+  vars:
+    ansible_remote_tmp: /tmp/.ansible-{{ ansible_user }}
+  tasks:
+    - name: Ensure local results directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/audit_results"
+        state: directory
+      delegate_to: localhost
+      run_once: true
+
+    - name: Skip stopped VMs or hosts without an assigned IP
+      ansible.builtin.meta: end_host
+      when: >
+        ansible_host is not defined or
+        ansible_host == '' or
+        ansible_host == inventory_hostname or
+        ansible_host == 'localhost' or
+        (status is defined and status != 'running')
+
+    - name: Probe SSH port 2222 (from Challenge 1 hardening)
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 2222
+        timeout: 2
+        state: started
+      delegate_to: localhost
+      register: ssh_2222_check
+      ignore_errors: true
+
+    - name: Dynamically assign SSH port (2222 if open, fallback to 22)
+      ansible.builtin.set_fact:
+        ansible_port: "{{ 2222 if (ssh_2222_check is defined and not ssh_2222_check.failed) else 22 }}"
+
+    - name: Run Challenge 2 System Audit Script
+      ansible.builtin.shell: "{{ lookup('template', playbook_dir ~ '/audit-osys3030-c2.sh') }}"
+      become: true
+      register: audit_raw
+      changed_when: false
+      ignore_unreachable: true
+
+    - name: Warn on Unreachable Hosts
+      ansible.builtin.debug:
+        msg: "[WARNING] Host {{ inventory_hostname }} ({{ ansible_host }}:{{ ansible_port }}) was unreachable: {{ audit_raw.msg | default('Permission denied / no matching SSH key') }}"
+      when: audit_raw.unreachable is defined and audit_raw.unreachable
+
+    - name: Parse Audit Results
+      ansible.builtin.set_fact:
+        audit: "{{ audit_raw.stdout | from_json }}"
+      when: audit_raw.stdout is defined and audit_raw.stdout != ''
+
+    - name: Save Host Result to Local JSON
+      ansible.builtin.copy:
+        content: "{{ audit_raw.stdout }}"
+        dest: "{{ playbook_dir }}/audit_results/osys3030-c2-{{ inventory_hostname }}.json"
+      delegate_to: localhost
+      when: audit is defined
+
+    - name: Display Challenge 2 Audit Summary
+      ansible.builtin.debug:
+        msg: >-
+          [{{ audit.Student }} ({{ audit.Host }}:{{ ansible_port }})] Score: {{ audit.PassedCount }}/{{ audit.TotalChecks }} ({{ audit.ScorePercent }}%) |
+          ens19 IP: {{ audit.Ens19IP }} (MTU: {{ audit.Ens19MTU }}) |
+          ens18Up: {{ 'PASS' if audit.Checks.Ens18Up.Pass else 'FAIL' }} |
+          ens18GW: {{ 'PASS' if audit.Checks.Ens18Gateway.Pass else 'FAIL' }} |
+          ens19Exists: {{ 'PASS' if audit.Checks.Ens19Exists.Pass else 'FAIL' }} |
+          ens19Up: {{ 'PASS' if audit.Checks.Ens19Up.Pass else 'FAIL' }} |
+          ens19IP: {{ 'PASS' if audit.Checks.Ens19IP.Pass else 'FAIL' }} |
+          NoDefault: {{ 'PASS' if audit.Checks.Ens19NoDefault.Pass else 'FAIL' }} |
+          Netplan: {{ 'PASS' if audit.Checks.NetplanConfig.Pass else 'FAIL' }} |
+          PingGW: {{ 'PASS' if audit.Checks.PingGateway.Pass else 'FAIL' }} |
+          PingInet: {{ 'PASS' if audit.Checks.PingInternet.Pass else 'FAIL' }} |
+          DNS: {{ 'PASS' if audit.Checks.DNSResolution.Pass else 'FAIL' }} |
+          MTU9000: {{ 'PASS' if audit.Checks.JumboFrames.Pass else 'FAIL' }}
+      when: audit is defined

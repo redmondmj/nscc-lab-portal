@@ -201,23 +201,80 @@ try:
 except Exception as e:
     logger.warning(f"Could not perform initial Proxmox VM sync: {e}")
 
+def check_vm_access(vmid):
+    """
+    Ensures that a logged-in non-instructor student can only control their own VM.
+    Returns True if allowed, aborts with 403 otherwise.
+    """
+    logged_user = session.get("user")
+    if not logged_user or logged_user.get("role") in ["instructor", "admin"]:
+        return True
+
+    logged_id = logged_user.get("id", "").strip().lower()
+    try:
+        real_vmid_int = int(vmid)
+        vm_record = StudentVM.query.filter_by(vmid=real_vmid_int).first()
+        if vm_record and vm_record.user_id.strip().lower() != logged_id:
+            stripped_logged = logged_id.lstrip("w").lstrip("0")
+            stripped_vm_user = vm_record.user_id.strip().lower().lstrip("w").lstrip("0")
+            if stripped_logged != stripped_vm_user:
+                abort(403, description="Access denied. You do not own this VM.")
+    except (ValueError, TypeError):
+        pass
+    return True
+
 # ==========================================
 # Frontend Routes
 # ==========================================
 
 @app.route("/")
 def index():
-    """Renders the course selector page."""
+    """Renders the course selector page with student enrollment status."""
     courses = Course.query.all()
     courses_dict = {c.id: c.to_dict() for c in courses}
-    return render_template("index.html", courses=courses_dict)
+
+    logged_user = session.get("user")
+    user_enrolled_courses = set()
+    is_admin_or_instructor = False
+    if logged_user:
+        if logged_user.get("role") in ["instructor", "admin"]:
+            is_admin_or_instructor = True
+        else:
+            enrs = Enrollment.query.filter(
+                db.func.lower(Enrollment.user_id) == logged_user.get("id", "").lower()
+            ).all()
+            user_enrolled_courses = {e.course_id.lower() for e in enrs}
+
+    return render_template(
+        "index.html",
+        courses=courses_dict,
+        user_enrolled_courses=user_enrolled_courses,
+        is_admin_or_instructor=is_admin_or_instructor
+    )
 
 @app.route("/<course_id>")
 def course_portal(course_id):
-    """Renders the course-specific student portal."""
+    """Renders the course-specific student portal, checking student enrollment."""
     course = db.session.get(Course, course_id.lower())
     if not course:
         abort(404)
+
+    logged_user = session.get("user")
+    if logged_user and logged_user.get("role") not in ["instructor", "admin"]:
+        user_id = logged_user.get("id", "")
+        enrollment = Enrollment.query.filter(
+            db.func.lower(Enrollment.user_id) == user_id.lower(),
+            Enrollment.course_id == course.id
+        ).first()
+        if not enrollment:
+            return render_template(
+                "auth_error.html",
+                error_title="Course Enrollment Required",
+                error_message=f"You are not enrolled in {course.name} ({course.code}). Access to this lab environment is restricted to enrolled students.",
+                error_detail=f"Student account '{user_id}' does not have an active enrollment in {course.code}. If you are registered for this course, please contact your instructor to be added to the lab roster.",
+                login_url=url_for("index")
+            ), 403
+
     return render_template("course.html", course=course)
 
 # ==========================================
@@ -230,6 +287,16 @@ def api_list_templates(course_id):
     course = db.session.get(Course, course_id.lower())
     if not course:
         return jsonify({"error": "Course not found"}), 404
+
+    logged_user = session.get("user")
+    if logged_user and logged_user.get("role") not in ["instructor", "admin"]:
+        user_id = logged_user.get("id", "")
+        enrollment = Enrollment.query.filter(
+            db.func.lower(Enrollment.user_id) == user_id.lower(),
+            Enrollment.course_id == course.id
+        ).first()
+        if not enrollment:
+            return jsonify({"error": f"You are not enrolled in {course.code}", "templates": []}), 403
 
     templates = [t.to_dict() for t in course.templates if t.is_published]
     return jsonify({"course": course.code, "templates": templates})
@@ -365,9 +432,23 @@ def api_provision_vm(course_id):
         return jsonify({"success": False, "error": "student_id and template_id are required"}), 400
 
     logged_user = session.get("user")
-    if logged_user and logged_user.get("role") not in ["instructor", "admin"]:
+    is_admin_or_instructor = logged_user and logged_user.get("role") in ["instructor", "admin"]
+
+    if logged_user and not is_admin_or_instructor:
         if logged_user.get("id", "").upper() != student_id.upper():
             abort(403, description="Access denied. You can only provision labs for yourself.")
+
+    # Validate that student is enrolled in this course (unless instructor/admin)
+    if not is_admin_or_instructor:
+        enrollment = Enrollment.query.filter(
+            db.func.lower(Enrollment.user_id) == student_id.lower(),
+            Enrollment.course_id == course.id
+        ).first()
+        if not enrollment:
+            return jsonify({
+                "success": False,
+                "error": f"You are not enrolled in {course.code} ({course.name}). Contact your instructor for access."
+            }), 403
 
     template = LabTemplate.query.get(template_id)
     if not template or not template.is_published or template.course_id != course.id:
@@ -468,6 +549,8 @@ def api_start_vm(course_id, vmid):
         if not node:
             return jsonify({"success": False, "error": f"VM {vmid} not found."}), 404
 
+        check_vm_access(real_vmid)
+
         current = proxmox.nodes(node).qemu(real_vmid).status.current.get()
         if current.get("status") == "running":
             return jsonify({"success": True, "message": "VM is already running."}), 200
@@ -492,6 +575,8 @@ def api_restart_vm(course_id, vmid):
         if not node:
             return jsonify({"success": False, "error": f"VM {vmid} not found."}), 404
 
+        check_vm_access(real_vmid)
+
         proxmox.nodes(node).qemu(real_vmid).status.reboot.post()
         return jsonify({"success": True, "message": f"VM {real_vmid} reboot command issued."}), 200
     except Exception as e:
@@ -511,6 +596,8 @@ def api_stop_vm(course_id, vmid):
         node, real_vmid, _ = find_vm_by_id_or_name(proxmox, vmid, course)
         if not node:
             return jsonify({"success": False, "error": f"VM {vmid} not found."}), 404
+
+        check_vm_access(real_vmid)
 
         current = proxmox.nodes(node).qemu(real_vmid).status.current.get()
         if current.get("status") == "stopped":
