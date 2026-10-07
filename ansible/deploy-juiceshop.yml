@@ -1,0 +1,57 @@
+---
+# Deploy OWASP Juice Shop to OSYS3030 Fleet Playbook
+#
+# Usage:
+#   ansible-playbook -i inventory.py deploy-juiceshop.yml --limit osys3030
+
+- name: Deploy OWASP Juice Shop Container
+  hosts: "{{ target | default('osys3030') }}"
+  gather_facts: false
+  vars:
+    ansible_remote_tmp: /tmp/.ansible-{{ ansible_user }}
+  tasks:
+    - name: Skip stopped VMs or hosts without an assigned IP
+      ansible.builtin.meta: end_host
+      when: >
+        ansible_host is not defined or
+        ansible_host == '' or
+        ansible_host == inventory_hostname or
+        ansible_host == 'localhost' or
+        (status is defined and status != 'running')
+
+    - name: Probe SSH port 2222 (hardened)
+      ansible.builtin.wait_for:
+        host: "{{ ansible_host }}"
+        port: 2222
+        timeout: 2
+        state: started
+      delegate_to: localhost
+      register: ssh_2222_check
+      ignore_errors: true
+
+    - name: Dynamically assign SSH port (2222 if open, fallback to 22)
+      ansible.builtin.set_fact:
+        ansible_port: "{{ 2222 if (ssh_2222_check is defined and not ssh_2222_check.failed) else 22 }}"
+
+    - name: Install Docker Engine
+      ansible.builtin.apt:
+        name: docker.io
+        state: present
+        update_cache: yes
+      become: true
+
+    - name: Allow port 3000 in UFW Firewall
+      ansible.builtin.ufw:
+        rule: allow
+        port: '3000'
+        proto: tcp
+      become: true
+
+    - name: Run OWASP Juice Shop Container
+      ansible.builtin.shell: |
+        docker run -d -p 3000:3000 --name juiceshop --restart always bkimminich/juice-shop 2>/dev/null || docker start juiceshop
+      become: true
+
+    - name: Display Juice Shop URL
+      ansible.builtin.debug:
+        msg: "Juice Shop is ready for {{ student_id | default(inventory_hostname) }} at http://{{ ansible_host }}:3000"
